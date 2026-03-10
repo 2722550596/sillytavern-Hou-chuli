@@ -28,6 +28,7 @@
 
     const DEFAULT_SETTINGS = Object.freeze({
         keepTags: false,
+        onlyReplaceInTags: false,
         startTag: '',
         endTag: '',
         templates: DEFAULT_TEMPLATES,
@@ -73,6 +74,7 @@
         apiToggleButton: '#my-topbar-test-api-toggle',
         apiSettings: '#my-topbar-test-api-settings',
         keepTagsCheckbox: '#my-topbar-test-keep-tags',
+        onlyReplaceInTagsCheckbox: '#my-topbar-test-only-replace-in-tags',
         startTagInput: '#my-topbar-test-start-tag',
         endTagInput: '#my-topbar-test-end-tag',
 
@@ -231,6 +233,10 @@
 
         if (typeof settings.keepTags !== 'boolean') {
             settings.keepTags = DEFAULT_SETTINGS.keepTags;
+        }
+
+        if (typeof settings.onlyReplaceInTags !== 'boolean') {
+            settings.onlyReplaceInTags = DEFAULT_SETTINGS.onlyReplaceInTags;
         }
 
         if (typeof settings.startTag !== 'string') {
@@ -478,6 +484,64 @@
         $(SELECTORS.replyModal).fadeOut(200);
     }
 
+    function escapeRegExp(value) {
+        return String(value ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function extractAllTagInnerTexts(text, startTag, endTag) {
+        const sourceText = String(text ?? '');
+        const normalizedStartTag = String(startTag ?? '');
+        const normalizedEndTag = String(endTag ?? '');
+
+        if (!normalizedStartTag || !normalizedEndTag) {
+            return [];
+        }
+
+        const regex = new RegExp(`${escapeRegExp(normalizedStartTag)}([\\s\\S]*?)${escapeRegExp(normalizedEndTag)}`, 'g');
+        const values = [];
+        let match;
+
+        while ((match = regex.exec(sourceText)) !== null) {
+            values.push(match[1] ?? '');
+            if (match.index === regex.lastIndex) {
+                regex.lastIndex += 1;
+            }
+        }
+
+        return values;
+    }
+
+    function replaceAllTagInnerTexts(sourceText, startTag, endTag, replacements) {
+        const normalizedSourceText = String(sourceText ?? '');
+        const normalizedStartTag = String(startTag ?? '');
+        const normalizedEndTag = String(endTag ?? '');
+
+        if (!normalizedStartTag || !normalizedEndTag) {
+            return normalizedSourceText;
+        }
+
+        const regex = new RegExp(`${escapeRegExp(normalizedStartTag)}([\\s\\S]*?)${escapeRegExp(normalizedEndTag)}`, 'g');
+        let index = 0;
+
+        return normalizedSourceText.replace(regex, () => {
+            const replacement = index < replacements.length ? replacements[index] : '';
+            index += 1;
+            return `${normalizedStartTag}${replacement}${normalizedEndTag}`;
+        });
+    }
+
+    function appendUnreplaceableContentToOutput(unreplaceableText) {
+        const normalized = String(unreplaceableText ?? '').trim();
+        if (!normalized) {
+            return;
+        }
+
+        const current = getOutputText();
+        const separator = current && current.trim() ? '\n\n' : '';
+        setOutputText(`${current}${separator}${normalized}`);
+        focusOutputTextarea();
+    }
+
     async function confirmReplaceLastMessage() {
         const latestContext = SillyTavern.getContext();
         const chat = latestContext?.chat;
@@ -503,7 +567,34 @@
             return;
         }
 
-        message.mes = replyText;
+        const settings = loadSettings();
+        const shouldOnlyReplaceInTags = settings.keepTags && settings.onlyReplaceInTags;
+
+        if (shouldOnlyReplaceInTags) {
+            const rangeConfig = getRangeConfig();
+
+            if (!rangeConfig.enabled || rangeConfig.invalid) {
+                hideReplyModal();
+                showMessage('warning', '找不到标签,无法替换的内容会输出到截取框末尾.');
+                appendUnreplaceableContentToOutput(replyText);
+                return;
+            }
+
+            const originalMes = String(message.mes ?? '');
+            const oldInnerTexts = extractAllTagInnerTexts(originalMes, rangeConfig.startTag, rangeConfig.endTag);
+            const newInnerTexts = extractAllTagInnerTexts(replyText, rangeConfig.startTag, rangeConfig.endTag);
+
+            if (oldInnerTexts.length === 0 || newInnerTexts.length === 0 || oldInnerTexts.length !== newInnerTexts.length) {
+                hideReplyModal();
+                showMessage('warning', '找不到标签,无法替换的内容会输出到截取框末尾.');
+                appendUnreplaceableContentToOutput(replyText);
+                return;
+            }
+
+            message.mes = replaceAllTagInnerTexts(originalMes, rangeConfig.startTag, rangeConfig.endTag, newInnerTexts);
+        } else {
+            message.mes = replyText;
+        }
         if (message.extra && typeof message.extra === 'object' && Object.prototype.hasOwnProperty.call(message.extra, 'display_text')) {
             delete message.extra.display_text;
         }
@@ -679,13 +770,29 @@
             savePluginSettings();
         }
 
+        syncOnlyReplaceInTagsUi();
+
         return checked;
+    }
+
+    function syncOnlyReplaceInTagsUi() {
+        const settings = loadSettings();
+        const $checkbox = $(SELECTORS.onlyReplaceInTagsCheckbox);
+        if (!$checkbox.length) {
+            return;
+        }
+
+        const disabled = !settings.keepTags;
+        $checkbox.prop('checked', Boolean(settings.onlyReplaceInTags));
+        $checkbox.prop('disabled', disabled);
+        $checkbox.closest('label').toggleClass('is-disabled', disabled);
     }
 
     function syncUiFromSettings() {
         const settings = loadSettings();
 
         $(SELECTORS.keepTagsCheckbox).prop('checked', settings.keepTags);
+        syncOnlyReplaceInTagsUi();
         $(SELECTORS.startTagInput).val(settings.startTag);
         $(SELECTORS.endTagInput).val(settings.endTag);
 
@@ -1469,6 +1576,19 @@
                                 <span class="my-topbar-test-keep-tags-text">保留标签</span>
                             </label>
 
+                            <label for="my-topbar-test-only-replace-in-tags" class="my-topbar-test-keep-tags-row my-topbar-test-only-replace-row">
+                                <input id="my-topbar-test-only-replace-in-tags"
+                                       class="my-topbar-test-keep-tags-checkbox"
+                                       type="checkbox"
+                                       disabled>
+                                <span class="my-topbar-test-keep-tags-text">仅替换标签内</span>
+                            </label>
+
+                            <div class="my-topbar-test-range-only-replace-tip">
+                                勾选仅替换标签内,只会替换聊天记录相同的标签内的内容<br>
+                                找不到标签,无法替换的内容会输出到截取框末尾.
+                            </div>
+
                             <div class="my-topbar-test-range-row">
                                 <label for="my-topbar-test-start-tag" class="my-topbar-test-label">开始标签</label>
                                 <div class="my-topbar-test-tag-input-wrap">
@@ -1790,6 +1910,15 @@
             .off('change.myTopbarTestKeepTags', SELECTORS.keepTagsCheckbox)
             .on('change.myTopbarTestKeepTags', SELECTORS.keepTagsCheckbox, function () {
                 syncKeepTagsSettingFromCheckbox();
+            });
+
+        $(document)
+            .off('change.myTopbarTestOnlyReplaceInTags', SELECTORS.onlyReplaceInTagsCheckbox)
+            .on('change.myTopbarTestOnlyReplaceInTags', SELECTORS.onlyReplaceInTagsCheckbox, function () {
+                const settings = loadSettings();
+                settings.onlyReplaceInTags = $(SELECTORS.onlyReplaceInTagsCheckbox).is(':checked');
+                savePluginSettings();
+                syncOnlyReplaceInTagsUi();
             });
 
         $(document)

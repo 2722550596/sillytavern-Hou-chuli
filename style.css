@@ -259,6 +259,22 @@
     justify-content: flex-end;
 }
 
+.my-topbar-test-keep-tags-row.is-disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.my-topbar-test-keep-tags-row.is-disabled .my-topbar-test-keep-tags-checkbox {
+    cursor: not-allowed;
+}
+
+.my-topbar-test-range-only-replace-tip {
+    font-size: 12px;
+    line-height: 1.6;
+    opacity: 0.75;
+    margin-top: -6px;
+}
+
 .my-topbar-test-template-browse-view,
 .my-topbar-test-template-editor-view {
     display: flex;
