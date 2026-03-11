@@ -41,6 +41,10 @@
             frequencyPenalty: '',
             stream: false,
             modelSource: 'same',
+            stopString: '',
+            customApiBaseUrl: '',
+            customApiKey: '',
+            customModelName: '',
         }),
     });
 
@@ -105,11 +109,23 @@
         apiPresencePenaltyInput: '#my-topbar-test-api-presence-penalty',
         apiFrequencyPenaltyInput: '#my-topbar-test-api-frequency-penalty',
         apiStreamCheckbox: '#my-topbar-test-api-stream',
+        apiStopStringInput: '#my-topbar-test-api-stop-string',
         apiModelSourceToggle: '#my-topbar-test-api-source-toggle',
         apiModelSourceBody: '#my-topbar-test-api-source-body',
         apiModelSourceCurrent: '#my-topbar-test-api-source-current',
         apiModelSourceOptions: '#my-topbar-test-api-source-options',
         apiModelSourceOptionButton: '.my-topbar-test-api-source-option',
+        apiCustomConfig: '#my-topbar-test-api-custom-config',
+        apiCustomBaseUrlInput: '#my-topbar-test-api-custom-base-url',
+        apiCustomApiKeyInput: '#my-topbar-test-api-custom-api-key',
+        apiCustomModelNameInput: '#my-topbar-test-api-custom-model-name',
+        apiCustomFetchModelsButton: '#my-topbar-test-api-custom-fetch-models',
+        apiCustomModelSelect: '#my-topbar-test-api-custom-model-select',
+
+        mobileTabs: '#my-topbar-test-mobile-tabs',
+        mobileTabMenu: '#my-topbar-test-mobile-tab-menu',
+        mobileTabOutput: '#my-topbar-test-mobile-tab-output',
+        mobileBackButton: '#my-topbar-test-mobile-back',
 
         replyModal: '#my-topbar-test-reply-modal',
         replyModalTextarea: '#my-topbar-test-reply-modal-text',
@@ -124,6 +140,11 @@
     let initialized = false;
     let extractedBaseText = DEFAULT_TEXT;
     let templateEditorState = null;
+    let customModelState = {
+        isLoading: false,
+        sourceBaseUrl: '',
+        models: [],
+    };
     let manualSendState = {
         isBusy: false,
         chatId: '',
@@ -219,6 +240,10 @@
             frequencyPenalty: String(source.frequencyPenalty ?? defaultApiConfig.frequencyPenalty),
             stream: Boolean(source.stream),
             modelSource: source.modelSource === 'custom' ? 'custom' : 'same',
+            stopString: String(source.stopString ?? defaultApiConfig.stopString),
+            customApiBaseUrl: String(source.customApiBaseUrl ?? defaultApiConfig.customApiBaseUrl),
+            customApiKey: String(source.customApiKey ?? defaultApiConfig.customApiKey),
+            customModelName: String(source.customModelName ?? defaultApiConfig.customModelName),
         };
     }
 
@@ -368,6 +393,10 @@
             frequencyPenalty: resolveApiNumber(apiConfig.frequencyPenalty, 0),
             stream: Boolean(apiConfig.stream),
             modelSource: apiConfig.modelSource === 'custom' ? 'custom' : 'same',
+            stopString: String(apiConfig.stopString ?? ''),
+            customApiBaseUrl: String(apiConfig.customApiBaseUrl ?? ''),
+            customApiKey: String(apiConfig.customApiKey ?? ''),
+            customModelName: String(apiConfig.customModelName ?? ''),
         };
     }
 
@@ -448,6 +477,7 @@
     }
 
     function syncApiConfigUi() {
+        syncStopStringWithEndTagIfNeeded();
         const apiConfig = getApiConfig();
 
         $(SELECTORS.apiTemperatureInput).val(apiConfig.temperature);
@@ -456,6 +486,7 @@
         $(SELECTORS.apiPresencePenaltyInput).val(apiConfig.presencePenalty);
         $(SELECTORS.apiFrequencyPenaltyInput).val(apiConfig.frequencyPenalty);
         $(SELECTORS.apiStreamCheckbox).prop('checked', apiConfig.stream);
+        $(SELECTORS.apiStopStringInput).val(apiConfig.stopString);
         $(SELECTORS.apiModelSourceCurrent).text(apiConfig.modelSource === 'custom' ? '自定义' : '与酒馆相同');
         const nextValue = apiConfig.modelSource === 'custom' ? 'same' : 'custom';
         const nextLabel = nextValue === 'custom' ? '自定义' : '与酒馆相同';
@@ -466,6 +497,384 @@
                 ${nextLabel}
             </button>
         `);
+
+        $(SELECTORS.apiCustomBaseUrlInput).val(apiConfig.customApiBaseUrl);
+        $(SELECTORS.apiCustomApiKeyInput).val(apiConfig.customApiKey);
+        $(SELECTORS.apiCustomModelNameInput).val(apiConfig.customModelName);
+        const isCustomSource = apiConfig.modelSource === 'custom';
+        $(SELECTORS.apiCustomConfig).toggle(isCustomSource);
+        syncCustomModelSelectUi();
+    }
+
+    function isMobileLayout() {
+        try {
+            return Boolean(window.matchMedia && window.matchMedia('(max-width: 850px)').matches);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function setMobilePanelView(view) {
+        const normalized = view === 'output' ? 'output' : (view === 'detail' ? 'detail' : 'menu');
+        $(SELECTORS.panel).attr('data-mobile-view', normalized);
+        syncMobileTabsUi();
+    }
+
+    function syncMobileTabsUi() {
+        if (!isMobileLayout()) {
+            $(SELECTORS.panel).removeAttr('data-mobile-view');
+            return;
+        }
+
+        const view = String($(SELECTORS.panel).attr('data-mobile-view') ?? 'menu');
+        const isOutput = view === 'output';
+        const isDetail = view === 'detail';
+
+        $(SELECTORS.mobileTabMenu)
+            .toggleClass('active', !isOutput)
+            .attr('aria-pressed', String(!isOutput));
+        $(SELECTORS.mobileTabOutput)
+            .toggleClass('active', isOutput)
+            .attr('aria-pressed', String(isOutput));
+
+        $(SELECTORS.mobileBackButton).css('display', !isOutput && isDetail ? 'inline-flex' : 'none');
+    }
+
+    function normalizeCustomApiBaseUrl(value) {
+        return String(value ?? '').trim().replace(/\/+$/, '');
+    }
+
+    function joinUrl(baseUrl, path) {
+        const normalizedBaseUrl = normalizeCustomApiBaseUrl(baseUrl);
+        const normalizedPath = String(path ?? '').trim();
+
+        if (!normalizedBaseUrl) {
+            return '';
+        }
+
+        if (!normalizedPath) {
+            return normalizedBaseUrl;
+        }
+
+        if (normalizedPath.startsWith('/')) {
+            return `${normalizedBaseUrl}${normalizedPath}`;
+        }
+
+        return `${normalizedBaseUrl}/${normalizedPath}`;
+    }
+
+    function renderCustomModelSelect(modelIds, selectedValue = '') {
+        const $select = $(SELECTORS.apiCustomModelSelect);
+        if (!$select.length) {
+            return;
+        }
+
+        if (!Array.isArray(modelIds) || modelIds.length === 0) {
+            $select.prop('disabled', true);
+            $select.html('<option value="">获取列表选择</option>');
+            $select.val('');
+            return;
+        }
+
+        const optionsHtml = modelIds
+            .map(modelId => {
+                const escaped = escapeHtml(modelId);
+                return `<option value="${escaped}">${escaped}</option>`;
+            })
+            .join('');
+
+        $select.prop('disabled', false);
+        $select.html(optionsHtml);
+
+        const normalizedSelectedValue = String(selectedValue ?? '').trim();
+        if (normalizedSelectedValue && modelIds.includes(normalizedSelectedValue)) {
+            $select.val(normalizedSelectedValue);
+        } else {
+            $select.prop('selectedIndex', 0);
+        }
+    }
+
+    function syncCustomModelSelectUi() {
+        const apiConfig = getApiConfig();
+        const baseUrl = normalizeCustomApiBaseUrl(apiConfig.customApiBaseUrl);
+
+        if (!baseUrl || baseUrl !== customModelState.sourceBaseUrl) {
+            renderCustomModelSelect([]);
+            return;
+        }
+
+        renderCustomModelSelect(customModelState.models, apiConfig.customModelName);
+    }
+
+    function extractModelIdsFromOpenAiListResponse(data) {
+        const items = Array.isArray(data?.data) ? data.data : [];
+        const ids = [];
+        const seen = new Set();
+
+        for (const item of items) {
+            let modelId = '';
+
+            if (typeof item === 'string') {
+                modelId = item;
+            } else if (item && typeof item === 'object') {
+                modelId = String(item.id ?? item.model ?? item.name ?? '');
+            }
+
+            modelId = modelId.trim();
+            if (!modelId || seen.has(modelId)) {
+                continue;
+            }
+
+            seen.add(modelId);
+            ids.push(modelId);
+        }
+
+        return ids;
+    }
+
+    async function readResponseJsonSafely(response) {
+        try {
+            return await response.clone().json();
+        } catch (error) {
+            return null;
+        }
+    }
+
+    async function readResponseTextSafely(response) {
+        try {
+            return await response.clone().text();
+        } catch (error) {
+            return '';
+        }
+    }
+
+    async function fetchCustomModelsList() {
+        if (customModelState.isLoading) {
+            return;
+        }
+
+        const apiConfig = getApiConfig();
+        const baseUrl = normalizeCustomApiBaseUrl(apiConfig.customApiBaseUrl);
+        const apiKey = String(apiConfig.customApiKey ?? '').trim();
+
+        if (!baseUrl) {
+            showMessage('warning', '请先填写 API地址。');
+            return;
+        }
+
+        if (!apiKey) {
+            showMessage('warning', '请先填写 API密钥。');
+            return;
+        }
+
+        const url = joinUrl(baseUrl, 'models');
+        if (!url) {
+            showMessage('error', 'API地址不合法。');
+            return;
+        }
+
+        customModelState.isLoading = true;
+        setButtonBusyState(SELECTORS.apiCustomFetchModelsButton, true, '获取中...');
+        renderCustomModelSelect([]);
+
+        try {
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`,
+                },
+            });
+
+            if (!response.ok) {
+                const json = await readResponseJsonSafely(response);
+                const text = await readResponseTextSafely(response);
+                const message = String(json?.error?.message ?? json?.message ?? '').trim()
+                    || (text ? text.slice(0, 300) : '')
+                    || `获取模型列表失败（${response.status}）。`;
+                throw new Error(message);
+            }
+
+            const data = await response.json();
+            const modelIds = extractModelIdsFromOpenAiListResponse(data);
+
+            if (modelIds.length === 0) {
+                throw new Error('未获取到可用模型列表。');
+            }
+
+            customModelState.sourceBaseUrl = baseUrl;
+            customModelState.models = modelIds;
+            renderCustomModelSelect(modelIds, apiConfig.customModelName);
+            showMessage('success', '已获取模型列表。');
+        } catch (error) {
+            console.error(`[${MODULE_NAME}] 获取模型列表失败`, error);
+            customModelState.sourceBaseUrl = '';
+            customModelState.models = [];
+            renderCustomModelSelect([]);
+            showMessage('error', error instanceof Error ? error.message : '获取模型列表失败。');
+        } finally {
+            customModelState.isLoading = false;
+            setButtonBusyState(SELECTORS.apiCustomFetchModelsButton, false);
+        }
+    }
+
+    function normalizeStopString(value, shouldUseCloseTagFormat, fallbackEndTagName = '') {
+        const rawValue = String(value ?? '');
+        if (!shouldUseCloseTagFormat) {
+            return rawValue;
+        }
+
+        const normalizedFallback = normalizeTagName(fallbackEndTagName);
+        const extracted = normalizeTagName(rawValue);
+        const tagName = extracted || normalizedFallback;
+
+        if (!tagName) {
+            return '';
+        }
+
+        return `</${tagName}>`;
+    }
+
+    function syncStopStringWithEndTagIfNeeded() {
+        const settings = loadSettings();
+        const apiConfig = settings.apiConfig;
+        const stopString = String(apiConfig.stopString ?? '');
+
+        if (stopString.trim()) {
+            return;
+        }
+
+        const startTagName = String(settings.startTag ?? '').trim();
+        const endTagName = String(settings.endTag ?? '').trim();
+
+        if (!startTagName || !endTagName) {
+            return;
+        }
+
+        const normalized = normalizeStopString('', true, endTagName);
+        if (!normalized) {
+            return;
+        }
+
+        apiConfig.stopString = normalized;
+        savePluginSettings();
+        $(SELECTORS.apiStopStringInput).val(normalized);
+    }
+
+    function getEffectiveStopString() {
+        const settings = loadSettings();
+        const stopString = String(settings.apiConfig.stopString ?? '');
+        if (stopString.trim()) {
+            return stopString;
+        }
+
+        const startTagName = String(settings.startTag ?? '').trim();
+        const endTagName = String(settings.endTag ?? '').trim();
+        if (!startTagName || !endTagName) {
+            return '';
+        }
+
+        return normalizeStopString('', true, endTagName);
+    }
+
+    function applyStopStringToReplyText(replyText, stopString) {
+        const normalizedReplyText = String(replyText ?? '');
+        const normalizedStopString = String(stopString ?? '');
+        const trimmedStopString = normalizedStopString.trim();
+
+        if (!trimmedStopString) {
+            return normalizedReplyText;
+        }
+
+        const index = normalizedReplyText.indexOf(trimmedStopString);
+        if (index === -1) {
+            return normalizedReplyText;
+        }
+
+        return normalizedReplyText.slice(0, index + trimmedStopString.length);
+    }
+
+    function extractChatCompletionContent(data) {
+        const choices = Array.isArray(data?.choices) ? data.choices : [];
+        const firstChoice = choices.length > 0 ? choices[0] : null;
+
+        if (firstChoice && typeof firstChoice === 'object') {
+            const message = firstChoice.message;
+            if (message && typeof message === 'object' && typeof message.content === 'string') {
+                return message.content;
+            }
+
+            if (typeof firstChoice.text === 'string') {
+                return firstChoice.text;
+            }
+        }
+
+        return '';
+    }
+
+    async function generateWithCustomApi(promptText, resolvedApiConfig) {
+        const baseUrl = normalizeCustomApiBaseUrl(resolvedApiConfig.customApiBaseUrl);
+        const apiKey = String(resolvedApiConfig.customApiKey ?? '').trim();
+        const modelName = String(resolvedApiConfig.customModelName ?? '').trim();
+
+        if (!baseUrl) {
+            throw new Error('请先填写 API地址。');
+        }
+
+        if (!apiKey) {
+            throw new Error('请先填写 API密钥。');
+        }
+
+        if (!modelName) {
+            throw new Error('请先填写 模型名称。');
+        }
+
+        const url = joinUrl(baseUrl, 'chat/completions');
+        if (!url) {
+            throw new Error('API地址不合法。');
+        }
+
+        const body = {
+            model: modelName,
+            messages: [
+                {
+                    role: 'user',
+                    content: String(promptText ?? ''),
+                },
+            ],
+            temperature: resolvedApiConfig.temperature,
+            top_p: resolvedApiConfig.topP,
+            presence_penalty: resolvedApiConfig.presencePenalty,
+            frequency_penalty: resolvedApiConfig.frequencyPenalty,
+            stream: false,
+        };
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+            const json = await readResponseJsonSafely(response);
+            const text = await readResponseTextSafely(response);
+            const message = String(json?.error?.message ?? json?.message ?? '').trim()
+                || (text ? text.slice(0, 300) : '')
+                || `请求失败（${response.status}）。`;
+            throw new Error(message);
+        }
+
+        const data = await response.json();
+        const content = extractChatCompletionContent(data);
+        if (!String(content ?? '').trim()) {
+            throw new Error('AI 没有返回可用内容。');
+        }
+
+        return String(content);
     }
 
     function showReplyModal(text, chatId = '') {
@@ -623,15 +1032,19 @@
         }
 
         const resolvedApiConfig = getResolvedApiConfig();
-        if (resolvedApiConfig.modelSource === 'custom') {
-            showMessage('warning', '自定义模型来源暂未实现。');
-            return;
-        }
-
         const latestContext = SillyTavern.getContext();
-        if (!latestContext || (typeof latestContext.generateRaw !== 'function' && typeof latestContext.generateQuietPrompt !== 'function')) {
-            showMessage('error', '当前宿主环境不支持手动发送。');
-            return;
+        const isCustomSource = resolvedApiConfig.modelSource === 'custom';
+
+        if (!isCustomSource) {
+            if (!latestContext || (typeof latestContext.generateRaw !== 'function' && typeof latestContext.generateQuietPrompt !== 'function')) {
+                showMessage('error', '当前宿主环境不支持手动发送。');
+                return;
+            }
+        } else {
+            if (typeof fetch !== 'function') {
+                showMessage('error', '当前宿主环境不支持自定义 API 请求。');
+                return;
+            }
         }
 
         const chatIdBefore = getCurrentChatIdValue();
@@ -643,14 +1056,19 @@
         let restoreOverrides = () => {};
 
         try {
-            restoreOverrides = applyTemporaryGenerationOverrides(latestContext, resolvedApiConfig);
-
             let replyText = '';
-            if (typeof latestContext.generateRaw === 'function') {
-                replyText = await latestContext.generateRaw({ prompt: outputText });
+            if (isCustomSource) {
+                replyText = await generateWithCustomApi(outputText, resolvedApiConfig);
             } else {
-                replyText = await latestContext.generateQuietPrompt({ quietPrompt: outputText });
+                restoreOverrides = applyTemporaryGenerationOverrides(latestContext, resolvedApiConfig);
+                if (typeof latestContext.generateRaw === 'function') {
+                    replyText = await latestContext.generateRaw({ prompt: outputText });
+                } else {
+                    replyText = await latestContext.generateQuietPrompt({ quietPrompt: outputText });
+                }
             }
+
+            replyText = applyStopStringToReplyText(replyText, getEffectiveStopString());
 
             if (requestId !== manualSendState.requestId) {
                 return;
@@ -691,7 +1109,18 @@
 
     // 显示/隐藏全屏面板
     function togglePanel() {
-        $(SELECTORS.panel).fadeToggle(200);
+        const $panel = $(SELECTORS.panel);
+        const willShow = !$panel.is(':visible');
+
+        if (willShow) {
+            if (isMobileLayout()) {
+                setMobilePanelView('menu');
+            } else {
+                syncMobileTabsUi();
+            }
+        }
+
+        $panel.fadeToggle(200);
     }
 
     function hidePanel() {
@@ -1536,6 +1965,29 @@
                         <i class="fa-solid fa-times"></i>
                     </div>
 
+                    <div id="my-topbar-test-mobile-tabs" class="my-topbar-test-mobile-tabs">
+                        <button id="my-topbar-test-mobile-back"
+                                class="menu_button my-topbar-test-mobile-back"
+                                type="button"
+                                aria-label="返回功能菜单">
+                            <i class="fa-solid fa-chevron-left"></i> 返回
+                        </button>
+                        <div class="my-topbar-test-mobile-tab-buttons">
+                            <button id="my-topbar-test-mobile-tab-menu"
+                                    class="menu_button my-topbar-test-mobile-tab active"
+                                    type="button"
+                                    aria-pressed="true">
+                                功能菜单
+                            </button>
+                            <button id="my-topbar-test-mobile-tab-output"
+                                    class="menu_button my-topbar-test-mobile-tab"
+                                    type="button"
+                                    aria-pressed="false">
+                                截取与输出
+                            </button>
+                        </div>
+                    </div>
+
                     <div class="my-topbar-test-col-left">
                         <div class="my-topbar-test-section-title">功能菜单</div>
                         
@@ -1736,11 +2188,16 @@
                                     <input id="my-topbar-test-api-frequency-penalty" class="text_pole my-topbar-test-api-input" type="number" step="0.1" placeholder="0">
                                 </div>
 
-                                <label for="my-topbar-test-api-stream" class="my-topbar-test-keep-tags-row my-topbar-test-api-stream-row">
-                                    <input id="my-topbar-test-api-stream" class="my-topbar-test-keep-tags-checkbox" type="checkbox">
-                                    <span class="my-topbar-test-keep-tags-text">流式输出</span>
-                                </label>
-                            </div>
+                                 <label for="my-topbar-test-api-stream" class="my-topbar-test-keep-tags-row my-topbar-test-api-stream-row">
+                                     <input id="my-topbar-test-api-stream" class="my-topbar-test-keep-tags-checkbox" type="checkbox">
+                                     <span class="my-topbar-test-keep-tags-text">流式输出</span>
+                                 </label>
+
+                                 <div class="my-topbar-test-api-field my-topbar-test-api-stop-field">
+                                     <label for="my-topbar-test-api-stop-string" class="my-topbar-test-label">停止字符</label>
+                                     <input id="my-topbar-test-api-stop-string" class="text_pole my-topbar-test-api-input" type="text" spellcheck="false" autocomplete="off">
+                                 </div>
+                             </div>
 
                             <div class="my-topbar-test-api-drawer">
                                 <button id="my-topbar-test-api-source-toggle"
@@ -1748,20 +2205,51 @@
                                         type="button">
                                     模型来源
                                 </button>
-                                <div id="my-topbar-test-api-source-body" class="my-topbar-test-api-drawer-body" style="display: none;">
-                                    <button id="my-topbar-test-api-source-current"
-                                            class="menu_button my-topbar-test-api-source-current"
-                                            type="button">
-                                        与酒馆相同
-                                    </button>
-                                    <div id="my-topbar-test-api-source-options" class="my-topbar-test-api-source-options" style="display: none;"></div>
-                                </div>
-                            </div>
-                        </div>
+                                 <div id="my-topbar-test-api-source-body" class="my-topbar-test-api-drawer-body" style="display: none;">
+                                     <button id="my-topbar-test-api-source-current"
+                                             class="menu_button my-topbar-test-api-source-current"
+                                             type="button">
+                                         与酒馆相同
+                                     </button>
+                                     <div id="my-topbar-test-api-source-options" class="my-topbar-test-api-source-options" style="display: none;"></div>
+
+                                     <div id="my-topbar-test-api-custom-config" class="my-topbar-test-api-custom-config" style="display: none;">
+                                         <div class="my-topbar-test-api-field">
+                                             <label for="my-topbar-test-api-custom-base-url" class="my-topbar-test-label">API地址</label>
+                                             <input id="my-topbar-test-api-custom-base-url" class="text_pole my-topbar-test-api-input" type="text" spellcheck="false" autocomplete="off">
+                                         </div>
+
+                                         <div class="my-topbar-test-api-field">
+                                             <label for="my-topbar-test-api-custom-api-key" class="my-topbar-test-label">API密钥</label>
+                                             <input id="my-topbar-test-api-custom-api-key" class="text_pole my-topbar-test-api-input" type="password" spellcheck="false" autocomplete="off">
+                                         </div>
+
+                                         <div class="my-topbar-test-api-field">
+                                             <label for="my-topbar-test-api-custom-model-name" class="my-topbar-test-label">模型名称</label>
+                                             <input id="my-topbar-test-api-custom-model-name" class="text_pole my-topbar-test-api-input" type="text" spellcheck="false" autocomplete="off">
+                                         </div>
+
+                                         <div class="my-topbar-test-api-field">
+                                             <label class="my-topbar-test-label">获取模型</label>
+                                             <button id="my-topbar-test-api-custom-fetch-models"
+                                                     class="menu_button my-topbar-test-template-tool-button"
+                                                     type="button">
+                                                 获取模型
+                                             </button>
+                                             <select id="my-topbar-test-api-custom-model-select"
+                                                     class="text_pole my-topbar-test-api-input my-topbar-test-api-model-select"
+                                                     disabled>
+                                                 <option value="">获取列表选择</option>
+                                             </select>
+                                         </div>
+                                     </div>
+                                 </div>
+                             </div>
+                         </div>
                     </div>
 
                     <div class="my-topbar-test-col-right">
-                        <div class="my-topbar-test-section-title">截取内容及输出</div>
+                        <div class="my-topbar-test-section-title">截取与输出</div>
                         <label for="my-topbar-test-output" class="my-topbar-test-label" style="margin-bottom: 8px; display: block;">
                             这里会显示当前聊天窗口最底部最后一条消息；如果设置了范围，则只显示标签之间的内容（可编辑）
                         </label>
@@ -1872,6 +2360,30 @@
                 hidePanel();
             });
 
+        $(document)
+            .off('click.myTopbarTestMobileTabMenu', SELECTORS.mobileTabMenu)
+            .on('click.myTopbarTestMobileTabMenu', SELECTORS.mobileTabMenu, function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                setMobilePanelView('menu');
+            });
+
+        $(document)
+            .off('click.myTopbarTestMobileTabOutput', SELECTORS.mobileTabOutput)
+            .on('click.myTopbarTestMobileTabOutput', SELECTORS.mobileTabOutput, function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                setMobilePanelView('output');
+            });
+
+        $(document)
+            .off('click.myTopbarTestMobileBack', SELECTORS.mobileBackButton)
+            .on('click.myTopbarTestMobileBack', SELECTORS.mobileBackButton, function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                setMobilePanelView('menu');
+            });
+
         // 切换到 范围设置 标签
         $(document)
             .off('click.myTopbarTestRangeToggle', SELECTORS.rangeToggleButton)
@@ -1879,6 +2391,9 @@
                 e.preventDefault();
                 e.stopPropagation();
                 switchTabToRange();
+                if (isMobileLayout()) {
+                    setMobilePanelView('detail');
+                }
             });
 
         // 切换到 模板设置 标签
@@ -1888,6 +2403,9 @@
                 e.preventDefault();
                 e.stopPropagation();
                 switchTabToTemplate();
+                if (isMobileLayout()) {
+                    setMobilePanelView('detail');
+                }
             });
 
         $(document)
@@ -1896,6 +2414,9 @@
                 e.preventDefault();
                 e.stopPropagation();
                 switchTabToCaptureSend();
+                if (isMobileLayout()) {
+                    setMobilePanelView('detail');
+                }
             });
 
         $(document)
@@ -1904,6 +2425,9 @@
                 e.preventDefault();
                 e.stopPropagation();
                 switchTabToApiSettings();
+                if (isMobileLayout()) {
+                    setMobilePanelView('detail');
+                }
             });
 
         $(document)
@@ -1925,12 +2449,14 @@
             .off('input.myTopbarTestStartTag', SELECTORS.startTagInput)
             .on('input.myTopbarTestStartTag', SELECTORS.startTagInput, function () {
                 updateTagSettingFromInput(SELECTORS.startTagInput, 'startTag');
+                syncStopStringWithEndTagIfNeeded();
             });
 
         $(document)
             .off('input.myTopbarTestEndTag', SELECTORS.endTagInput)
             .on('input.myTopbarTestEndTag', SELECTORS.endTagInput, function () {
                 updateTagSettingFromInput(SELECTORS.endTagInput, 'endTag');
+                syncStopStringWithEndTagIfNeeded();
             });
 
         $(document)
@@ -1967,6 +2493,62 @@
             .off('change.myTopbarTestApiStream', SELECTORS.apiStreamCheckbox)
             .on('change.myTopbarTestApiStream', SELECTORS.apiStreamCheckbox, function () {
                 updateApiConfigBoolean(SELECTORS.apiStreamCheckbox, 'stream');
+            });
+
+        $(document)
+            .off('input.myTopbarTestApiStopString', SELECTORS.apiStopStringInput)
+            .on('input.myTopbarTestApiStopString', SELECTORS.apiStopStringInput, function () {
+                const rawValue = String($(this).val() ?? '');
+                const settings = loadSettings();
+                const hasTags = Boolean(String(settings.startTag ?? '').trim() && String(settings.endTag ?? '').trim());
+                const normalized = normalizeStopString(rawValue, hasTags, settings.endTag);
+                if (rawValue !== normalized) {
+                    $(this).val(normalized);
+                }
+                updateApiConfigField('stopString', normalized);
+            });
+
+        $(document)
+            .off('input.myTopbarTestCustomApiBaseUrl', SELECTORS.apiCustomBaseUrlInput)
+            .on('input.myTopbarTestCustomApiBaseUrl', SELECTORS.apiCustomBaseUrlInput, function () {
+                const value = String($(this).val() ?? '');
+                updateApiConfigField('customApiBaseUrl', value);
+
+                const normalized = normalizeCustomApiBaseUrl(value);
+                if (normalized !== customModelState.sourceBaseUrl) {
+                    customModelState.sourceBaseUrl = '';
+                    customModelState.models = [];
+                    renderCustomModelSelect([]);
+                }
+            });
+
+        $(document)
+            .off('input.myTopbarTestCustomApiKey', SELECTORS.apiCustomApiKeyInput)
+            .on('input.myTopbarTestCustomApiKey', SELECTORS.apiCustomApiKeyInput, function () {
+                updateApiConfigField('customApiKey', String($(this).val() ?? ''));
+            });
+
+        $(document)
+            .off('input.myTopbarTestCustomModelName', SELECTORS.apiCustomModelNameInput)
+            .on('input.myTopbarTestCustomModelName', SELECTORS.apiCustomModelNameInput, function () {
+                updateApiConfigField('customModelName', String($(this).val() ?? ''));
+                syncCustomModelSelectUi();
+            });
+
+        $(document)
+            .off('click.myTopbarTestCustomFetchModels', SELECTORS.apiCustomFetchModelsButton)
+            .on('click.myTopbarTestCustomFetchModels', SELECTORS.apiCustomFetchModelsButton, async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                await fetchCustomModelsList();
+            });
+
+        $(document)
+            .off('change.myTopbarTestCustomModelSelect', SELECTORS.apiCustomModelSelect)
+            .on('change.myTopbarTestCustomModelSelect', SELECTORS.apiCustomModelSelect, function () {
+                const selectedModel = String($(this).val() ?? '');
+                $(SELECTORS.apiCustomModelNameInput).val(selectedModel);
+                updateApiConfigField('customModelName', selectedModel);
             });
 
         $(document)
@@ -2115,6 +2697,7 @@
         loadSettings();
         await mountPanel();
         syncUiFromSettings();
+        syncMobileTabsUi();
         setExtractedBaseText(DEFAULT_TEXT);
         syncOutputFromSelectedTemplates();
         mountButton();

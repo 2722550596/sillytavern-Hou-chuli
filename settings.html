@@ -5,6 +5,29 @@
             <i class="fa-solid fa-times"></i>
         </div>
 
+        <div id="my-topbar-test-mobile-tabs" class="my-topbar-test-mobile-tabs">
+            <button id="my-topbar-test-mobile-back"
+                    class="menu_button my-topbar-test-mobile-back"
+                    type="button"
+                    aria-label="返回功能菜单">
+                <i class="fa-solid fa-chevron-left"></i> 返回
+            </button>
+            <div class="my-topbar-test-mobile-tab-buttons">
+                <button id="my-topbar-test-mobile-tab-menu"
+                        class="menu_button my-topbar-test-mobile-tab active"
+                        type="button"
+                        aria-pressed="true">
+                    功能菜单
+                </button>
+                <button id="my-topbar-test-mobile-tab-output"
+                        class="menu_button my-topbar-test-mobile-tab"
+                        type="button"
+                        aria-pressed="false">
+                    截取与输出
+                </button>
+            </div>
+        </div>
+
         <!-- 左侧：功能菜单 -->
         <div class="my-topbar-test-col-left">
             <div class="my-topbar-test-section-title">功能菜单</div>
@@ -182,8 +205,8 @@
                 </div>
             </div>
 
-            <div id="my-topbar-test-api-settings" class="my-topbar-test-settings-section" style="display: none;">
-                <div class="my-topbar-test-api-grid">
+             <div id="my-topbar-test-api-settings" class="my-topbar-test-settings-section" style="display: none;">
+                 <div class="my-topbar-test-api-grid">
                     <div class="my-topbar-test-api-field">
                         <label for="my-topbar-test-api-temperature" class="my-topbar-test-label">模型温度</label>
                         <input id="my-topbar-test-api-temperature" class="text_pole my-topbar-test-api-input" type="number" step="0.1" placeholder="1">
@@ -209,33 +232,69 @@
                         <input id="my-topbar-test-api-frequency-penalty" class="text_pole my-topbar-test-api-input" type="number" step="0.1" placeholder="0">
                     </div>
 
-                    <label for="my-topbar-test-api-stream" class="my-topbar-test-keep-tags-row my-topbar-test-api-stream-row">
-                        <input id="my-topbar-test-api-stream" class="my-topbar-test-keep-tags-checkbox" type="checkbox">
-                        <span class="my-topbar-test-keep-tags-text">流式输出</span>
-                    </label>
-                </div>
+                     <label for="my-topbar-test-api-stream" class="my-topbar-test-keep-tags-row my-topbar-test-api-stream-row">
+                         <input id="my-topbar-test-api-stream" class="my-topbar-test-keep-tags-checkbox" type="checkbox">
+                         <span class="my-topbar-test-keep-tags-text">流式输出</span>
+                     </label>
 
-                <div class="my-topbar-test-api-drawer">
-                    <button id="my-topbar-test-api-source-toggle"
-                            class="menu_button my-topbar-test-api-drawer-toggle"
-                            type="button">
-                        模型来源
-                    </button>
-                    <div id="my-topbar-test-api-source-body" class="my-topbar-test-api-drawer-body" style="display: none;">
-                        <button id="my-topbar-test-api-source-current"
-                                class="menu_button my-topbar-test-api-source-current"
-                                type="button">
-                            与酒馆相同
-                        </button>
-                        <div id="my-topbar-test-api-source-options" class="my-topbar-test-api-source-options" style="display: none;"></div>
-                    </div>
-                </div>
-            </div>
+                     <div class="my-topbar-test-api-field my-topbar-test-api-stop-field">
+                         <label for="my-topbar-test-api-stop-string" class="my-topbar-test-label">停止字符</label>
+                         <input id="my-topbar-test-api-stop-string" class="text_pole my-topbar-test-api-input" type="text" spellcheck="false" autocomplete="off">
+                     </div>
+                 </div>
+
+                 <div class="my-topbar-test-api-drawer">
+                     <button id="my-topbar-test-api-source-toggle"
+                             class="menu_button my-topbar-test-api-drawer-toggle"
+                             type="button">
+                         模型来源
+                     </button>
+                     <div id="my-topbar-test-api-source-body" class="my-topbar-test-api-drawer-body" style="display: none;">
+                         <button id="my-topbar-test-api-source-current"
+                                 class="menu_button my-topbar-test-api-source-current"
+                                 type="button">
+                             与酒馆相同
+                         </button>
+                         <div id="my-topbar-test-api-source-options" class="my-topbar-test-api-source-options" style="display: none;"></div>
+
+                         <div id="my-topbar-test-api-custom-config" class="my-topbar-test-api-custom-config" style="display: none;">
+                             <div class="my-topbar-test-api-field">
+                                 <label for="my-topbar-test-api-custom-base-url" class="my-topbar-test-label">API地址</label>
+                                 <input id="my-topbar-test-api-custom-base-url" class="text_pole my-topbar-test-api-input" type="text" spellcheck="false" autocomplete="off">
+                             </div>
+
+                             <div class="my-topbar-test-api-field">
+                                 <label for="my-topbar-test-api-custom-api-key" class="my-topbar-test-label">API密钥</label>
+                                 <input id="my-topbar-test-api-custom-api-key" class="text_pole my-topbar-test-api-input" type="password" spellcheck="false" autocomplete="off">
+                             </div>
+
+                             <div class="my-topbar-test-api-field">
+                                 <label for="my-topbar-test-api-custom-model-name" class="my-topbar-test-label">模型名称</label>
+                                 <input id="my-topbar-test-api-custom-model-name" class="text_pole my-topbar-test-api-input" type="text" spellcheck="false" autocomplete="off">
+                             </div>
+
+                             <div class="my-topbar-test-api-field">
+                                 <label class="my-topbar-test-label">获取模型</label>
+                                 <button id="my-topbar-test-api-custom-fetch-models"
+                                         class="menu_button my-topbar-test-template-tool-button"
+                                         type="button">
+                                     获取模型
+                                 </button>
+                                 <select id="my-topbar-test-api-custom-model-select"
+                                         class="text_pole my-topbar-test-api-input my-topbar-test-api-model-select"
+                                         disabled>
+                                     <option value="">获取列表选择</option>
+                                 </select>
+                             </div>
+                         </div>
+                     </div>
+                 </div>
+             </div>
         </div>
 
         <!-- 右侧：输出显示框 -->
         <div class="my-topbar-test-col-right">
-            <div class="my-topbar-test-section-title">截取内容及输出</div>
+            <div class="my-topbar-test-section-title">截取与输出</div>
             <label for="my-topbar-test-output" class="my-topbar-test-label" style="margin-bottom: 8px; display: block;">
                 这里会显示当前聊天窗口最底部最后一条消息；如果设置了范围，则只显示标签之间的内容（可编辑）
             </label>
