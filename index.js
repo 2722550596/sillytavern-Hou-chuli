@@ -951,6 +951,62 @@
         focusOutputTextarea();
     }
 
+    async function triggerTavernHelperRenderRefresh(messageId) {
+        const resolvedMessageId = Number(messageId);
+        if (!Number.isFinite(resolvedMessageId)) {
+            return;
+        }
+
+        let lastError = null;
+        const tavernHelper = globalThis.TavernHelper;
+
+        if (tavernHelper && typeof tavernHelper === 'object') {
+            if (typeof tavernHelper.setChatMessages === 'function') {
+                try {
+                    await tavernHelper.setChatMessages(
+                        [{ message_id: resolvedMessageId }],
+                        { refresh: 'affected' },
+                    );
+                    return;
+                } catch (error) {
+                    lastError = error;
+                }
+            }
+
+            if (typeof tavernHelper.renderOneMessage === 'function') {
+                try {
+                    await tavernHelper.renderOneMessage(resolvedMessageId);
+                    return;
+                } catch (error) {
+                    lastError = error;
+                }
+            }
+
+            if (typeof tavernHelper.refreshOneMessage === 'function') {
+                try {
+                    await tavernHelper.refreshOneMessage(resolvedMessageId);
+                    return;
+                } catch (error) {
+                    lastError = error;
+                }
+            }
+        }
+
+        const builtin = globalThis.builtin;
+        if (builtin && typeof builtin.reloadAndRenderChatWithoutEvents === 'function') {
+            try {
+                await builtin.reloadAndRenderChatWithoutEvents();
+                return;
+            } catch (error) {
+                lastError = error;
+            }
+        }
+
+        if (lastError) {
+            console.warn(`[${MODULE_NAME}] 触发酒馆助手渲染刷新失败`, lastError);
+        }
+    }
+
     async function confirmReplaceLastMessage() {
         const latestContext = SillyTavern.getContext();
         const chat = latestContext?.chat;
@@ -1018,6 +1074,7 @@
 
         hideReplyModal();
         showMessage('success', '已替换当前聊天的最后一条消息。');
+        void triggerTavernHelperRenderRefresh(lastIndex);
     }
 
     async function handleManualSend() {
