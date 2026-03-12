@@ -77,6 +77,10 @@
         captureSendSettings: '#my-topbar-test-capture-send-settings',
         apiToggleButton: '#my-topbar-test-api-toggle',
         apiSettings: '#my-topbar-test-api-settings',
+        autoTriggerToggleButton: '#my-topbar-test-auto-trigger-toggle',
+        autoTriggerSettings: '#my-topbar-test-auto-trigger-settings',
+        autoTriggerEnabledCheckbox: '#my-topbar-test-auto-trigger-enabled',
+        autoTriggerStopButton: '#my-topbar-test-auto-trigger-stop',
         keepTagsCheckbox: '#my-topbar-test-keep-tags',
         onlyReplaceInTagsCheckbox: '#my-topbar-test-only-replace-in-tags',
         startTagInput: '#my-topbar-test-start-tag',
@@ -101,6 +105,7 @@
 
         manualTriggerButton: '#my-topbar-test-manual-trigger',
         manualSendButton: '#my-topbar-test-manual-send',
+        stopManualFlowButton: '#my-topbar-test-stop-manual-flow',
         outputTextarea: '#my-topbar-test-output',
 
         apiTemperatureInput: '#my-topbar-test-api-temperature',
@@ -152,6 +157,16 @@
     };
     let replyModalState = {
         chatId: '',
+        source: '',
+    };
+
+    let autoTriggerState = {
+        enabledChatId: '',
+        isBusy: false,
+        requestId: 0,
+        stopRequested: false,
+        stoppedByUser: false,
+        pendingTimerId: 0,
     };
 
     function log(...args) {
@@ -281,6 +296,26 @@
         return settings;
     }
 
+    function isAutoTriggerEnabledForCurrentChat() {
+        const currentChatId = getCurrentChatIdValue();
+        return Boolean(currentChatId && autoTriggerState.enabledChatId === currentChatId);
+    }
+
+    function setAutoTriggerEnabledForCurrentChat(enabled) {
+        const currentChatId = getCurrentChatIdValue();
+
+        autoTriggerState.enabledChatId = enabled ? currentChatId : '';
+        autoTriggerState.requestId += 1;
+        autoTriggerState.isBusy = false;
+        autoTriggerState.stopRequested = false;
+        autoTriggerState.stoppedByUser = false;
+
+        if (autoTriggerState.pendingTimerId) {
+            window.clearTimeout(autoTriggerState.pendingTimerId);
+            autoTriggerState.pendingTimerId = 0;
+        }
+    }
+
     function showMessage(type, message) {
         try {
             if (globalThis.toastr && typeof globalThis.toastr[type] === 'function') {
@@ -366,6 +401,13 @@
     function setManualSendBusy(isBusy) {
         manualSendState.isBusy = isBusy;
         updateManualSendUiState();
+    }
+
+    function isAutoFlowActive() {
+        const isAutoConfirmVisible = $(SELECTORS.replyModal).is(':visible')
+            && String(replyModalState.source ?? '') === 'auto';
+
+        return autoTriggerState.isBusy || Boolean(autoTriggerState.pendingTimerId) || isAutoConfirmVisible;
     }
 
     function getApiConfig() {
@@ -877,9 +919,11 @@
         return String(content);
     }
 
-    function showReplyModal(text, chatId = '') {
+    function showReplyModal(text, chatId = '', source = '') {
         replyModalState.chatId = String(chatId ?? '');
+        replyModalState.source = String(source ?? '');
         $(SELECTORS.replyModalTextarea).val(String(text ?? ''));
+        ensureReplyModalMounted();
         $(SELECTORS.replyModal).fadeIn(200);
 
         const $textarea = $(SELECTORS.replyModalTextarea);
@@ -889,8 +933,36 @@
     }
 
     function hideReplyModal() {
+        const source = String(replyModalState.source ?? '');
         replyModalState.chatId = '';
+        replyModalState.source = '';
         $(SELECTORS.replyModal).fadeOut(200);
+
+        if (source === 'auto') {
+            autoTriggerState.isBusy = false;
+        }
+    }
+
+    function ensureReplyModalMounted() {
+        const $modal = $(SELECTORS.replyModal);
+        if (!$modal.length) {
+            return;
+        }
+
+        const $body = $('body');
+        if (!$body.length) {
+            return;
+        }
+
+        if (!$modal.parent().is('body')) {
+            $modal.detach();
+            $body.append($modal);
+        }
+    }
+
+    function ensureReplyModalMountedAtInit() {
+        // Ensure modal is globally visible even when panel is hidden.
+        ensureReplyModalMounted();
     }
 
     function escapeRegExp(value) {
@@ -1012,6 +1084,25 @@
         const chat = latestContext?.chat;
         const currentChatId = getCurrentChatIdValue();
 
+        const replyText = String($(SELECTORS.replyModalTextarea).val() ?? '');
+        const replySource = String(replyModalState.source ?? '');
+
+        if (!replySource) {
+            return;
+        }
+
+        if (replySource !== 'manual' && autoTriggerState.stopRequested) {
+            // 自动流程被用户停止：按要求 B，把内容写入截取与输出框，不替换消息。
+            if ($(SELECTORS.replyModal).is(':visible')) {
+                hideReplyModal();
+            }
+            showMessage('success', '已停止流程');
+            if (replySource === 'auto') {
+                appendUnreplaceableContentToOutput(replyText);
+            }
+            return;
+        }
+
         if (replyModalState.chatId && currentChatId !== replyModalState.chatId) {
             hideReplyModal();
             showMessage('warning', '聊天窗口已切换，当前回复确认框已失效。');
@@ -1024,7 +1115,6 @@
         }
 
         const lastIndex = chat.length - 1;
-        const replyText = String($(SELECTORS.replyModalTextarea).val() ?? '');
         const message = chat[lastIndex];
 
         if (!message || typeof message !== 'object') {
@@ -1079,6 +1169,11 @@
 
     async function handleManualSend() {
         if (manualSendState.isBusy) {
+            return;
+        }
+
+        if (isAutoFlowActive()) {
+            showMessage('warning', '当前正在进行自动触发');
             return;
         }
 
@@ -1141,7 +1236,7 @@
                 return;
             }
 
-            showReplyModal(String(replyText), chatIdBefore);
+            showReplyModal(String(replyText), chatIdBefore, 'manual');
         } catch (error) {
             console.error(`[${MODULE_NAME}] 手动发送失败`, error);
             showMessage('error', error instanceof Error ? error.message : '手动发送失败。');
@@ -1160,8 +1255,247 @@
         }
 
         if ($(SELECTORS.replyModal).is(':visible')) {
+            const source = String(replyModalState.source ?? '');
+            if (source === 'auto') {
+                const replyText = String($(SELECTORS.replyModalTextarea).val() ?? '').trim();
+                if (replyText) {
+                    appendUnreplaceableContentToOutput(replyText);
+                }
+            }
             hideReplyModal();
         }
+
+        // 自动触发仅当前 chat 生效：切换聊天视为关闭。
+        autoTriggerState.enabledChatId = '';
+
+        autoTriggerState.requestId += 1;
+        autoTriggerState.isBusy = false;
+        autoTriggerState.stopRequested = false;
+        autoTriggerState.stoppedByUser = false;
+
+        if (autoTriggerState.pendingTimerId) {
+            window.clearTimeout(autoTriggerState.pendingTimerId);
+            autoTriggerState.pendingTimerId = 0;
+        }
+
+        syncAutoTriggerUiState();
+    }
+
+    function stopManualFlow() {
+        const isReplyModalVisible = $(SELECTORS.replyModal).is(':visible');
+        const replySource = String(replyModalState.source ?? '');
+        if (isAutoFlowActive()) {
+            showMessage('warning', '当前正在进行自动触发');
+            return;
+        }
+
+        const isSending = manualSendState.isBusy;
+        const isManualConfirmVisible = isReplyModalVisible && replySource === 'manual';
+
+        if (!isSending && !isManualConfirmVisible) {
+            showMessage('warning', '当前没有进行流程');
+            return;
+        }
+
+        if (isSending) {
+            manualSendState.requestId += 1;
+            setManualSendBusy(false);
+            showMessage('success', '已停止流程');
+            return;
+        }
+
+        if (isManualConfirmVisible) {
+            void (async () => {
+                const confirmed = await askConfirmDialog('停止流程', '是否关闭回复确认框？');
+                if (!confirmed) {
+                    return;
+                }
+
+                const isStillManualConfirmVisible = $(SELECTORS.replyModal).is(':visible')
+                    && String(replyModalState.source ?? '') === 'manual';
+                if (!isStillManualConfirmVisible) {
+                    return;
+                }
+
+                hideReplyModal();
+                showMessage('success', '已停止流程');
+            })();
+        }
+    }
+
+    function stopAutoFlow() {
+        const isReplyModalVisible = $(SELECTORS.replyModal).is(':visible');
+        const isAutoConfirmVisible = isReplyModalVisible && String(replyModalState.source ?? '') === 'auto';
+        const hasPending = Boolean(autoTriggerState.pendingTimerId);
+
+        if (!autoTriggerState.isBusy && !hasPending && !isAutoConfirmVisible) {
+            showMessage('warning', '当前没有进行流程');
+            return;
+        }
+
+        autoTriggerState.stopRequested = true;
+        autoTriggerState.requestId += 1;
+        autoTriggerState.isBusy = false;
+
+        if (autoTriggerState.pendingTimerId) {
+            window.clearTimeout(autoTriggerState.pendingTimerId);
+            autoTriggerState.pendingTimerId = 0;
+        }
+
+        if (isAutoConfirmVisible) {
+            const replyText = String($(SELECTORS.replyModalTextarea).val() ?? '').trim();
+            if (replyText) {
+                appendUnreplaceableContentToOutput(replyText);
+            }
+            hideReplyModal();
+        }
+
+        showMessage('success', '已停止流程');
+    }
+
+    function handleAutoTriggerEnabledCheckboxChanged() {
+        const checked = $(SELECTORS.autoTriggerEnabledCheckbox).is(':checked');
+        setAutoTriggerEnabledForCurrentChat(checked);
+        syncAutoTriggerUiState();
+    }
+
+    function handleGenerationStopped() {
+        autoTriggerState.stoppedByUser = true;
+    }
+
+    function handleGenerationEnded(chatLength) {
+        if (!isAutoTriggerEnabledForCurrentChat()) {
+            return;
+        }
+
+        // ST release 源码：点击停止会先 emit ENDED 再 emit STOPPED，因此必须延迟处理 ENDED。
+        const requestId = autoTriggerState.requestId + 1;
+        autoTriggerState.requestId = requestId;
+
+        if (autoTriggerState.pendingTimerId) {
+            window.clearTimeout(autoTriggerState.pendingTimerId);
+        }
+
+        autoTriggerState.pendingTimerId = window.setTimeout(async () => {
+            autoTriggerState.pendingTimerId = 0;
+
+            if (requestId !== autoTriggerState.requestId) {
+                return;
+            }
+
+            if (autoTriggerState.stoppedByUser) {
+                autoTriggerState.stoppedByUser = false;
+                return;
+            }
+            autoTriggerState.stoppedByUser = false;
+
+            if (!isAutoTriggerEnabledForCurrentChat()) {
+                return;
+            }
+
+            if (autoTriggerState.isBusy) {
+                return;
+            }
+            autoTriggerState.isBusy = true;
+            autoTriggerState.stopRequested = false;
+
+            try {
+                const didExtract = await handleManualTrigger(true);
+                if (!didExtract) {
+                    return;
+                }
+
+                if (requestId !== autoTriggerState.requestId || autoTriggerState.stopRequested) {
+                    return;
+                }
+
+                // 复用手动发送，但标记为 auto 来源以便停止自动流程时走 B 行为。
+                const chatIdBefore = getCurrentChatIdValue();
+                const outputText = getOutputText().trim();
+                if (!outputText) {
+                    return;
+                }
+
+                // 复制 handleManualSend 的最小逻辑：直接调用 handleManualSend 会被 autoTriggerState.isBusy 拦截。
+                const resolvedApiConfig = getResolvedApiConfig();
+                const latestContext = SillyTavern.getContext();
+                const isCustomSource = resolvedApiConfig.modelSource === 'custom';
+
+                if (!isCustomSource) {
+                    if (!latestContext || (typeof latestContext.generateRaw !== 'function' && typeof latestContext.generateQuietPrompt !== 'function')) {
+                        showMessage('error', '当前宿主环境不支持手动发送。');
+                        return;
+                    }
+                } else {
+                    if (typeof fetch !== 'function') {
+                        showMessage('error', '当前宿主环境不支持自定义 API 请求。');
+                        return;
+                    }
+                }
+
+                const manualRequestId = manualSendState.requestId + 1;
+                manualSendState.requestId = manualRequestId;
+                manualSendState.chatId = chatIdBefore;
+                setManualSendBusy(true);
+
+                let restoreOverrides = () => {};
+
+                try {
+                    let replyText = '';
+                    if (isCustomSource) {
+                        replyText = await generateWithCustomApi(outputText, resolvedApiConfig);
+                    } else {
+                        restoreOverrides = applyTemporaryGenerationOverrides(latestContext, resolvedApiConfig);
+                        if (typeof latestContext.generateRaw === 'function') {
+                            replyText = await latestContext.generateRaw({ prompt: outputText });
+                        } else {
+                            replyText = await latestContext.generateQuietPrompt({ quietPrompt: outputText });
+                        }
+                    }
+
+                    replyText = applyStopStringToReplyText(replyText, getEffectiveStopString());
+
+                    if (requestId !== autoTriggerState.requestId || autoTriggerState.stopRequested) {
+                        return;
+                    }
+
+                    if (manualRequestId !== manualSendState.requestId) {
+                        return;
+                    }
+
+                    if (getCurrentChatIdValue() !== chatIdBefore) {
+                        showMessage('warning', '聊天窗口已切换，本次回复未写入当前界面。');
+                        return;
+                    }
+
+                    if (!String(replyText ?? '').trim()) {
+                        showMessage('warning', 'AI 没有返回可用内容。');
+                        return;
+                    }
+
+                    showReplyModal(String(replyText), chatIdBefore, 'auto');
+                } catch (error) {
+                    console.error(`[${MODULE_NAME}] 自动触发发送失败`, error);
+                    showMessage('error', error instanceof Error ? error.message : '手动发送失败。');
+                } finally {
+                    restoreOverrides();
+                    if (manualRequestId === manualSendState.requestId) {
+                        setManualSendBusy(false);
+                    }
+                }
+            } catch (error) {
+                console.error(`[${MODULE_NAME}] 自动触发流程失败`, error);
+                showMessage('error', error instanceof Error ? error.message : '自动触发流程失败。');
+            } finally {
+                if (requestId === autoTriggerState.requestId) {
+                    const isAutoConfirmVisible = $(SELECTORS.replyModal).is(':visible')
+                        && String(replyModalState.source ?? '') === 'auto';
+                    if (!isAutoConfirmVisible) {
+                        autoTriggerState.isBusy = false;
+                    }
+                }
+            }
+        }, 0);
     }
 
     // 显示/隐藏全屏面板
@@ -1286,6 +1620,11 @@
         syncTemplateEditorState();
         syncApiConfigUi();
         updateManualSendUiState();
+        syncAutoTriggerUiState();
+    }
+
+    function syncAutoTriggerUiState() {
+        $(SELECTORS.autoTriggerEnabledCheckbox).prop('checked', isAutoTriggerEnabledForCurrentChat());
     }
 
     function getRangeConfig() {
@@ -1369,6 +1708,17 @@
         $(SELECTORS.apiSettings).fadeIn(200);
     }
 
+    function switchTabToAutoTrigger() {
+        $(SELECTORS.menuBtns).removeClass('active');
+        $(SELECTORS.autoTriggerToggleButton).addClass('active');
+
+        $(SELECTORS.rangeSettings).hide();
+        $(SELECTORS.templateSettings).hide();
+        $(SELECTORS.captureSendSettings).hide();
+        $(SELECTORS.apiSettings).hide();
+        $(SELECTORS.autoTriggerSettings).fadeIn(200);
+    }
+
     function getLastMessageText() {
         const latestContext = SillyTavern.getContext();
         const chat = latestContext?.chat;
@@ -1377,22 +1727,17 @@
             return '';
         }
 
-        for (let i = chat.length - 1; i >= 0; i--) {
-            const message = chat[i];
-            if (!message) {
-                continue;
-            }
+        const message = chat[chat.length - 1];
+        if (!message) {
+            return '';
+        }
 
-            if (typeof message.mes === 'string') {
-                if (message.mes.trim() === '') {
-                    continue;
-                }
-                return message.mes;
-            }
+        if (typeof message.mes === 'string') {
+            return message.mes;
+        }
 
-            if (message.mes !== undefined && message.mes !== null) {
-                return String(message.mes);
-            }
+        if (message.mes !== undefined && message.mes !== null) {
+            return String(message.mes);
         }
 
         return '';
@@ -1452,14 +1797,19 @@
         };
     }
 
-    async function handleManualTrigger() {
+    async function handleManualTrigger(allowWhenAutoBusy = false) {
+        if (isAutoFlowActive() && !allowWhenAutoBusy) {
+            showMessage('warning', '当前正在进行自动触发');
+            return false;
+        }
+
         const lastMessageText = getLastMessageText();
 
         if (!lastMessageText || !String(lastMessageText).trim()) {
             setExtractedBaseText('');
             setOutputText(EMPTY_CHAT_TEXT);
             focusOutputTextarea();
-            return;
+            return false;
         }
 
         const result = extractTextByRange(lastMessageText);
@@ -1474,11 +1824,12 @@
             setExtractedBaseText('');
             setOutputText(result.message);
             focusOutputTextarea();
-            return;
+            return false;
         }
 
         setExtractedBaseText(result.text);
         syncOutputFromSelectedTemplates(true);
+        return true;
     }
 
     function findTemplateById(templateId) {
@@ -2072,6 +2423,12 @@
                             <i class="fa-solid fa-link"></i> api链接
                         </button>
 
+                        <button id="my-topbar-test-auto-trigger-toggle"
+                                class="menu_button my-topbar-test-menu-btn"
+                                type="button">
+                            <i class="fa-solid fa-robot"></i> 自动触发
+                        </button>
+
                     </div>
 
                     <div class="my-topbar-test-col-middle">
@@ -2215,6 +2572,11 @@
                                         type="button">
                                     <i class="fa-solid fa-paper-plane"></i> 手动发送
                                 </button>
+                                <button id="my-topbar-test-stop-manual-flow"
+                                        class="menu_button my-topbar-test-menu-btn"
+                                        type="button">
+                                    停止手动流程
+                                </button>
                             </div>
                         </div>
 
@@ -2302,10 +2664,25 @@
                                      </div>
                                  </div>
                              </div>
-                         </div>
-                    </div>
+                          </div>
+                     </div>
 
-                    <div class="my-topbar-test-col-right">
+                     <div id="my-topbar-test-auto-trigger-settings" class="my-topbar-test-settings-section" style="display: none;">
+                         <label for="my-topbar-test-auto-trigger-enabled" class="my-topbar-test-keep-tags-row">
+                             <input id="my-topbar-test-auto-trigger-enabled"
+                                    class="my-topbar-test-keep-tags-checkbox"
+                                    type="checkbox">
+                             <span class="my-topbar-test-keep-tags-text">开启自动触发</span>
+                         </label>
+
+                         <button id="my-topbar-test-auto-trigger-stop"
+                                 class="menu_button my-topbar-test-menu-btn"
+                                 type="button">
+                             停止自动流程
+                         </button>
+                     </div>
+
+                     <div class="my-topbar-test-col-right">
                         <div class="my-topbar-test-section-title">截取与输出</div>
                         <label for="my-topbar-test-output" class="my-topbar-test-label" style="margin-bottom: 8px; display: block;">
                             这里会显示当前聊天窗口最底部最后一条消息；如果设置了范围，则只显示标签之间的内容（可编辑）
@@ -2485,6 +2862,31 @@
                 if (isMobileLayout()) {
                     setMobilePanelView('detail');
                 }
+            });
+
+        $(document)
+            .off('click.myTopbarTestAutoTriggerToggle', SELECTORS.autoTriggerToggleButton)
+            .on('click.myTopbarTestAutoTriggerToggle', SELECTORS.autoTriggerToggleButton, function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                switchTabToAutoTrigger();
+                if (isMobileLayout()) {
+                    setMobilePanelView('detail');
+                }
+            });
+
+        $(document)
+            .off('change.myTopbarTestAutoTriggerEnabled', SELECTORS.autoTriggerEnabledCheckbox)
+            .on('change.myTopbarTestAutoTriggerEnabled', SELECTORS.autoTriggerEnabledCheckbox, function () {
+                handleAutoTriggerEnabledCheckboxChanged();
+            });
+
+        $(document)
+            .off('click.myTopbarTestAutoTriggerStop', SELECTORS.autoTriggerStopButton)
+            .on('click.myTopbarTestAutoTriggerStop', SELECTORS.autoTriggerStopButton, function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                stopAutoFlow();
             });
 
         $(document)
@@ -2734,6 +3136,14 @@
             });
 
         $(document)
+            .off('click.myTopbarTestStopManualFlow', SELECTORS.stopManualFlowButton)
+            .on('click.myTopbarTestStopManualFlow', SELECTORS.stopManualFlowButton, function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                stopManualFlow();
+            });
+
+        $(document)
             .off('click.myTopbarTestReplyModalConfirm', SELECTORS.replyModalConfirmButton)
             .on('click.myTopbarTestReplyModalConfirm', SELECTORS.replyModalConfirmButton, async function (e) {
                 e.preventDefault();
@@ -2757,10 +3167,16 @@
         syncMobileTabsUi();
         setExtractedBaseText(DEFAULT_TEXT);
         syncOutputFromSelectedTemplates();
+        ensureReplyModalMountedAtInit();
         mountButton();
         bindEvents();
         eventSource.off?.(event_types.CHAT_CHANGED, handleChatChanged);
         eventSource.on(event_types.CHAT_CHANGED, handleChatChanged);
+
+        eventSource.off?.(event_types.GENERATION_STOPPED, handleGenerationStopped);
+        eventSource.on(event_types.GENERATION_STOPPED, handleGenerationStopped);
+        eventSource.off?.(event_types.GENERATION_ENDED, handleGenerationEnded);
+        eventSource.on(event_types.GENERATION_ENDED, handleGenerationEnded);
 
         if (!initialized) {
             initialized = true;

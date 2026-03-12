@@ -1,7 +1,7 @@
 {
   "display_name": "琳喵喵后处理",
   "author": "琳喵喵",
-  "version": "1.21",
+  "version": "1.3",
   "loading_order": 10,
   "js": "index.js",
   "css": "style.css"

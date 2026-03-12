@@ -31,7 +31,7 @@
         <!-- 左侧：功能菜单 -->
         <div class="my-topbar-test-col-left">
             <div class="my-topbar-test-section-title">功能菜单</div>
-            
+
             <button id="my-topbar-test-range-toggle"
                     class="menu_button my-topbar-test-menu-btn active"
                     type="button">
@@ -54,6 +54,12 @@
                     class="menu_button my-topbar-test-menu-btn"
                     type="button">
                 <i class="fa-solid fa-link"></i> api链接
+            </button>
+
+            <button id="my-topbar-test-auto-trigger-toggle"
+                    class="menu_button my-topbar-test-menu-btn"
+                    type="button">
+                <i class="fa-solid fa-robot"></i> 自动触发
             </button>
 
         </div>
@@ -119,73 +125,74 @@
                 </div>
             </div>
 
-        <!-- 模板设置 -->
-        <div id="my-topbar-test-template-settings" class="my-topbar-test-settings-section" style="display: none;">
-            <div id="my-topbar-test-template-browse-view" class="my-topbar-test-template-browse-view">
-                <div class="my-topbar-test-template-tip">
-                    点击模板切换选定状态，点击编辑修改按钮名称和模板内容，上下箭头可调整顺序。
+            <!-- 模板设置 -->
+            <div id="my-topbar-test-template-settings" class="my-topbar-test-settings-section" style="display: none;">
+                <div id="my-topbar-test-template-browse-view" class="my-topbar-test-template-browse-view">
+                    <div class="my-topbar-test-template-tip">
+                        点击模板切换选定状态，点击编辑修改按钮名称和模板内容，上下箭头可调整顺序。
+                    </div>
+
+                    <div class="my-topbar-test-template-tools">
+                        <button id="my-topbar-test-template-delete-selected"
+                                class="menu_button my-topbar-test-template-tool-button"
+                                type="button">
+                            删除选定
+                        </button>
+                        <button id="my-topbar-test-template-add"
+                                class="menu_button my-topbar-test-template-tool-button"
+                                type="button">
+                            添加模板
+                        </button>
+                        <button id="my-topbar-test-template-export"
+                                class="menu_button my-topbar-test-template-tool-button"
+                                type="button">
+                            导出
+                        </button>
+                        <button id="my-topbar-test-template-import"
+                                class="menu_button my-topbar-test-template-tool-button"
+                                type="button">
+                            导入
+                        </button>
+                    </div>
+
+                    <div id="my-topbar-test-template-list" class="my-topbar-test-template-list"></div>
                 </div>
 
-                <div class="my-topbar-test-template-tools">
-                    <button id="my-topbar-test-template-delete-selected"
-                            class="menu_button my-topbar-test-template-tool-button"
-                            type="button">
-                        删除选定
-                    </button>
-                    <button id="my-topbar-test-template-add"
-                            class="menu_button my-topbar-test-template-tool-button"
-                            type="button">
-                        添加模板
-                    </button>
-                    <button id="my-topbar-test-template-export"
-                            class="menu_button my-topbar-test-template-tool-button"
-                            type="button">
-                        导出
-                    </button>
-                    <button id="my-topbar-test-template-import"
-                            class="menu_button my-topbar-test-template-tool-button"
-                            type="button">
-                        导入
-                    </button>
+                <div id="my-topbar-test-template-editor-view" class="my-topbar-test-template-editor-view" style="display: none;">
+                    <div id="my-topbar-test-template-editor-title" class="my-topbar-test-template-editor-title">编辑模板</div>
+                    <label for="my-topbar-test-template-editor-label" class="my-topbar-test-label">按钮名称</label>
+                    <input id="my-topbar-test-template-editor-label"
+                           class="text_pole my-topbar-test-template-editor-input"
+                           type="text"
+                           spellcheck="false"
+                           placeholder="请输入按钮名称"
+                           autocomplete="off">
+                    <label for="my-topbar-test-template-editor-text" class="my-topbar-test-label">模板内容</label>
+                    <textarea id="my-topbar-test-template-editor-text"
+                              class="text_pole my-topbar-test-template-editor-textarea"
+                              spellcheck="false"
+                              placeholder="请输入模板内容"></textarea>
+                    <div class="my-topbar-test-template-editor-actions">
+                        <button id="my-topbar-test-template-editor-save"
+                                class="menu_button my-topbar-test-template-tool-button"
+                                type="button">
+                            保存
+                        </button>
+                        <button id="my-topbar-test-template-editor-exit"
+                                class="menu_button my-topbar-test-template-tool-button"
+                                type="button">
+                            退出
+                        </button>
+                    </div>
                 </div>
 
-                <div id="my-topbar-test-template-list" class="my-topbar-test-template-list"></div>
+                <input id="my-topbar-test-template-import-input"
+                       type="file"
+                       accept=".json,application/json"
+                       hidden>
             </div>
 
-            <div id="my-topbar-test-template-editor-view" class="my-topbar-test-template-editor-view" style="display: none;">
-                <div id="my-topbar-test-template-editor-title" class="my-topbar-test-template-editor-title">编辑模板</div>
-                <label for="my-topbar-test-template-editor-label" class="my-topbar-test-label">按钮名称</label>
-                <input id="my-topbar-test-template-editor-label"
-                       class="text_pole my-topbar-test-template-editor-input"
-                       type="text"
-                       spellcheck="false"
-                       placeholder="请输入按钮名称"
-                       autocomplete="off">
-                <label for="my-topbar-test-template-editor-text" class="my-topbar-test-label">模板内容</label>
-                <textarea id="my-topbar-test-template-editor-text"
-                          class="text_pole my-topbar-test-template-editor-textarea"
-                          spellcheck="false"
-                          placeholder="请输入模板内容"></textarea>
-                <div class="my-topbar-test-template-editor-actions">
-                    <button id="my-topbar-test-template-editor-save"
-                            class="menu_button my-topbar-test-template-tool-button"
-                            type="button">
-                        保存
-                    </button>
-                    <button id="my-topbar-test-template-editor-exit"
-                            class="menu_button my-topbar-test-template-tool-button"
-                            type="button">
-                        退出
-                    </button>
-                </div>
-            </div>
-
-            <input id="my-topbar-test-template-import-input"
-                   type="file"
-                   accept=".json,application/json"
-                   hidden>
-        </div>
-
+            <!-- 截取与发送 -->
             <div id="my-topbar-test-capture-send-settings" class="my-topbar-test-settings-section" style="display: none;">
                 <div class="my-topbar-test-template-tip">
                     先手动截取，再把当前截取框中的内容复制发送给 AI。发送完成后会弹出确认框，确认后替换当前聊天窗口最后一条消息。
@@ -202,11 +209,17 @@
                             type="button">
                         <i class="fa-solid fa-paper-plane"></i> 手动发送
                     </button>
+                    <button id="my-topbar-test-stop-manual-flow"
+                            class="menu_button my-topbar-test-menu-btn"
+                            type="button">
+                        停止手动流程
+                    </button>
                 </div>
             </div>
 
-             <div id="my-topbar-test-api-settings" class="my-topbar-test-settings-section" style="display: none;">
-                 <div class="my-topbar-test-api-grid">
+            <!-- API 设置 -->
+            <div id="my-topbar-test-api-settings" class="my-topbar-test-settings-section" style="display: none;">
+                <div class="my-topbar-test-api-grid">
                     <div class="my-topbar-test-api-field">
                         <label for="my-topbar-test-api-temperature" class="my-topbar-test-label">模型温度</label>
                         <input id="my-topbar-test-api-temperature" class="text_pole my-topbar-test-api-input" type="number" step="0.1" placeholder="1">
@@ -232,64 +245,80 @@
                         <input id="my-topbar-test-api-frequency-penalty" class="text_pole my-topbar-test-api-input" type="number" step="0.1" placeholder="0">
                     </div>
 
-                     <label for="my-topbar-test-api-stream" class="my-topbar-test-keep-tags-row my-topbar-test-api-stream-row">
-                         <input id="my-topbar-test-api-stream" class="my-topbar-test-keep-tags-checkbox" type="checkbox">
-                         <span class="my-topbar-test-keep-tags-text">流式输出</span>
-                     </label>
+                    <label for="my-topbar-test-api-stream" class="my-topbar-test-keep-tags-row my-topbar-test-api-stream-row">
+                        <input id="my-topbar-test-api-stream" class="my-topbar-test-keep-tags-checkbox" type="checkbox">
+                        <span class="my-topbar-test-keep-tags-text">流式输出</span>
+                    </label>
 
-                     <div class="my-topbar-test-api-field my-topbar-test-api-stop-field">
-                         <label for="my-topbar-test-api-stop-string" class="my-topbar-test-label">停止字符</label>
-                         <input id="my-topbar-test-api-stop-string" class="text_pole my-topbar-test-api-input" type="text" spellcheck="false" autocomplete="off">
-                     </div>
-                 </div>
+                    <div class="my-topbar-test-api-field my-topbar-test-api-stop-field">
+                        <label for="my-topbar-test-api-stop-string" class="my-topbar-test-label">停止字符</label>
+                        <input id="my-topbar-test-api-stop-string" class="text_pole my-topbar-test-api-input" type="text" spellcheck="false" autocomplete="off">
+                    </div>
+                </div>
 
-                 <div class="my-topbar-test-api-drawer">
-                     <button id="my-topbar-test-api-source-toggle"
-                             class="menu_button my-topbar-test-api-drawer-toggle"
-                             type="button">
-                         模型来源
-                     </button>
-                     <div id="my-topbar-test-api-source-body" class="my-topbar-test-api-drawer-body" style="display: none;">
-                         <button id="my-topbar-test-api-source-current"
-                                 class="menu_button my-topbar-test-api-source-current"
-                                 type="button">
-                             与酒馆相同
-                         </button>
-                         <div id="my-topbar-test-api-source-options" class="my-topbar-test-api-source-options" style="display: none;"></div>
+                <div class="my-topbar-test-api-drawer">
+                    <button id="my-topbar-test-api-source-toggle"
+                            class="menu_button my-topbar-test-api-drawer-toggle"
+                            type="button">
+                        模型来源
+                    </button>
+                    <div id="my-topbar-test-api-source-body" class="my-topbar-test-api-drawer-body" style="display: none;">
+                        <button id="my-topbar-test-api-source-current"
+                                class="menu_button my-topbar-test-api-source-current"
+                                type="button">
+                            与酒馆相同
+                        </button>
+                        <div id="my-topbar-test-api-source-options" class="my-topbar-test-api-source-options" style="display: none;"></div>
 
-                         <div id="my-topbar-test-api-custom-config" class="my-topbar-test-api-custom-config" style="display: none;">
-                             <div class="my-topbar-test-api-field">
-                                 <label for="my-topbar-test-api-custom-base-url" class="my-topbar-test-label">API地址</label>
-                                 <input id="my-topbar-test-api-custom-base-url" class="text_pole my-topbar-test-api-input" type="text" spellcheck="false" autocomplete="off">
-                             </div>
+                        <div id="my-topbar-test-api-custom-config" class="my-topbar-test-api-custom-config" style="display: none;">
+                            <div class="my-topbar-test-api-field">
+                                <label for="my-topbar-test-api-custom-base-url" class="my-topbar-test-label">API地址</label>
+                                <input id="my-topbar-test-api-custom-base-url" class="text_pole my-topbar-test-api-input" type="text" spellcheck="false" autocomplete="off">
+                            </div>
 
-                             <div class="my-topbar-test-api-field">
-                                 <label for="my-topbar-test-api-custom-api-key" class="my-topbar-test-label">API密钥</label>
-                                 <input id="my-topbar-test-api-custom-api-key" class="text_pole my-topbar-test-api-input" type="password" spellcheck="false" autocomplete="off">
-                             </div>
+                            <div class="my-topbar-test-api-field">
+                                <label for="my-topbar-test-api-custom-api-key" class="my-topbar-test-label">API密钥</label>
+                                <input id="my-topbar-test-api-custom-api-key" class="text_pole my-topbar-test-api-input" type="password" spellcheck="false" autocomplete="off">
+                            </div>
 
-                             <div class="my-topbar-test-api-field">
-                                 <label for="my-topbar-test-api-custom-model-name" class="my-topbar-test-label">模型名称</label>
-                                 <input id="my-topbar-test-api-custom-model-name" class="text_pole my-topbar-test-api-input" type="text" spellcheck="false" autocomplete="off">
-                             </div>
+                            <div class="my-topbar-test-api-field">
+                                <label for="my-topbar-test-api-custom-model-name" class="my-topbar-test-label">模型名称</label>
+                                <input id="my-topbar-test-api-custom-model-name" class="text_pole my-topbar-test-api-input" type="text" spellcheck="false" autocomplete="off">
+                            </div>
 
-                             <div class="my-topbar-test-api-field">
-                                 <label class="my-topbar-test-label">获取模型</label>
-                                 <button id="my-topbar-test-api-custom-fetch-models"
-                                         class="menu_button my-topbar-test-template-tool-button"
-                                         type="button">
-                                     获取模型
-                                 </button>
-                                 <select id="my-topbar-test-api-custom-model-select"
-                                         class="text_pole my-topbar-test-api-input my-topbar-test-api-model-select"
-                                         disabled>
-                                     <option value="">获取列表选择</option>
-                                 </select>
-                             </div>
-                         </div>
-                     </div>
-                 </div>
-             </div>
+                            <div class="my-topbar-test-api-field">
+                                <label class="my-topbar-test-label">获取模型</label>
+                                <button id="my-topbar-test-api-custom-fetch-models"
+                                        class="menu_button my-topbar-test-template-tool-button"
+                                        type="button">
+                                    获取模型
+                                </button>
+                                <select id="my-topbar-test-api-custom-model-select"
+                                        class="text_pole my-topbar-test-api-input my-topbar-test-api-model-select"
+                                        disabled>
+                                    <option value="">获取列表选择</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 自动触发 -->
+            <div id="my-topbar-test-auto-trigger-settings" class="my-topbar-test-settings-section" style="display: none;">
+                <label for="my-topbar-test-auto-trigger-enabled" class="my-topbar-test-keep-tags-row">
+                    <input id="my-topbar-test-auto-trigger-enabled"
+                           class="my-topbar-test-keep-tags-checkbox"
+                           type="checkbox">
+                    <span class="my-topbar-test-keep-tags-text">开启自动触发</span>
+                </label>
+
+                <button id="my-topbar-test-auto-trigger-stop"
+                        class="menu_button my-topbar-test-menu-btn"
+                        type="button">
+                    停止自动流程
+                </button>
+            </div>
         </div>
 
         <!-- 右侧：输出显示框 -->
