@@ -185,6 +185,7 @@
         dragOffsetX: 0,
         dragOffsetY: 0,
         suppressClick: false,
+        captureElement: null,
     };
     let mobileLongPressState = {
         timerId: 0,
@@ -1794,6 +1795,7 @@
         $(SELECTORS.captureSendSettings).hide();
         $(SELECTORS.apiSettings).hide();
         $(SELECTORS.templateSettings).hide();
+        $(SELECTORS.autoTriggerSettings).hide();
         $(SELECTORS.rangeSettings).fadeIn(200);
         $(SELECTORS.startTagInput).focus();
     }
@@ -1806,6 +1808,7 @@
         $(SELECTORS.rangeSettings).hide();
         $(SELECTORS.captureSendSettings).hide();
         $(SELECTORS.apiSettings).hide();
+        $(SELECTORS.autoTriggerSettings).hide();
         $(SELECTORS.templateSettings).fadeIn(200);
         syncTemplateEditorState();
     }
@@ -1817,6 +1820,7 @@
         $(SELECTORS.rangeSettings).hide();
         $(SELECTORS.templateSettings).hide();
         $(SELECTORS.apiSettings).hide();
+        $(SELECTORS.autoTriggerSettings).hide();
         $(SELECTORS.captureSendSettings).fadeIn(200);
     }
 
@@ -1827,6 +1831,7 @@
         $(SELECTORS.rangeSettings).hide();
         $(SELECTORS.templateSettings).hide();
         $(SELECTORS.captureSendSettings).hide();
+        $(SELECTORS.autoTriggerSettings).hide();
         $(SELECTORS.apiSettings).fadeIn(200);
     }
 
@@ -2899,6 +2904,20 @@
             window.clearTimeout(templateSortState.timerId);
         }
 
+        if (
+            templateSortState.captureElement
+            && templateSortState.pointerId !== null
+            && typeof templateSortState.captureElement.releasePointerCapture === 'function'
+        ) {
+            try {
+                if (typeof templateSortState.captureElement.hasPointerCapture !== 'function' || templateSortState.captureElement.hasPointerCapture(templateSortState.pointerId)) {
+                    templateSortState.captureElement.releasePointerCapture(templateSortState.pointerId);
+                }
+            } catch (error) {
+                console.warn(`[${MODULE_NAME}] 释放模板拖拽指针捕获失败`, error);
+            }
+        }
+
         const shouldSuppressClick = templateSortState.suppressClick || templateSortState.isDragging;
 
         templateSortState = {
@@ -2911,6 +2930,7 @@
             dragOffsetX: 0,
             dragOffsetY: 0,
             suppressClick: shouldSuppressClick,
+            captureElement: null,
         };
 
         $('body').removeClass('my-topbar-test-template-dragging');
@@ -2925,12 +2945,13 @@
             });
     }
 
-    function beginTemplateSortPress(templateId, pointerId, startX, startY) {
+    function beginTemplateSortPress(templateId, pointerId, startX, startY, captureElement = null) {
         resetTemplateSortState();
         templateSortState.pointerId = pointerId;
         templateSortState.startX = startX;
         templateSortState.startY = startY;
         templateSortState.templateId = String(templateId ?? '');
+        templateSortState.captureElement = captureElement;
         templateSortState.timerId = window.setTimeout(() => {
             const $item = getTemplateItemElement(templateSortState.templateId);
             if (!$item.length) {
@@ -2943,6 +2964,19 @@
             templateSortState.suppressClick = true;
             templateSortState.dragOffsetX = rect ? templateSortState.startX - rect.left : 0;
             templateSortState.dragOffsetY = rect ? templateSortState.startY - rect.top : 0;
+
+            if (
+                templateSortState.captureElement
+                && templateSortState.pointerId !== null
+                && typeof templateSortState.captureElement.setPointerCapture === 'function'
+            ) {
+                try {
+                    templateSortState.captureElement.setPointerCapture(templateSortState.pointerId);
+                } catch (error) {
+                    console.warn(`[${MODULE_NAME}] 设置模板拖拽指针捕获失败`, error);
+                }
+            }
+
             $item
                 .addClass('is-dragging')
                 .css({
@@ -3936,7 +3970,7 @@
                 }
 
                 const templateId = String($(this).attr('data-template-id') ?? '');
-                beginTemplateSortPress(templateId, originalEvent.pointerId, originalEvent.clientX, originalEvent.clientY);
+                beginTemplateSortPress(templateId, originalEvent.pointerId, originalEvent.clientX, originalEvent.clientY, this);
             });
 
         $(document)
