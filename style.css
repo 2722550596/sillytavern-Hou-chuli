@@ -759,6 +759,20 @@ body.my-topbar-test-template-dragging .my-topbar-test-template-apply {
         padding-right: 104px;
     }
 
+    .my-topbar-test-action-dialog-overlay {
+        align-items: flex-start;
+        overflow-y: auto;
+        padding: calc(16px + env(safe-area-inset-top, 0px)) 16px 16px;
+        box-sizing: border-box;
+    }
+
+    .my-topbar-test-action-dialog-card {
+        width: min(100%, 420px);
+        margin: 0 auto;
+        max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 32px);
+        overflow-y: auto;
+    }
+
     .my-topbar-test-api-stop-field {
         grid-column: auto;
     }
