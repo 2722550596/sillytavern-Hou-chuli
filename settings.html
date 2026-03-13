@@ -41,7 +41,7 @@
             <button id="my-topbar-test-template-toggle"
                     class="menu_button my-topbar-test-menu-btn"
                     type="button">
-                <i class="fa-solid fa-layer-group"></i> 提示词模板
+                <i class="fa-solid fa-layer-group"></i> 模板预设
             </button>
 
             <button id="my-topbar-test-capture-send-toggle"
@@ -125,34 +125,73 @@
                 </div>
             </div>
 
-            <!-- 模板设置 -->
+            <!-- 模板预设 -->
             <div id="my-topbar-test-template-settings" class="my-topbar-test-settings-section" style="display: none;">
                 <div id="my-topbar-test-template-browse-view" class="my-topbar-test-template-browse-view">
                     <div class="my-topbar-test-template-tip">
-                        点击模板切换选定状态，点击编辑修改按钮名称和模板内容，上下箭头可调整顺序。
+                        点击模板切换选定状态，点击右侧图标编辑或删除模板，长按模板按钮可拖拽调整顺序。
                     </div>
 
-                    <div class="my-topbar-test-template-tools">
-                        <button id="my-topbar-test-template-delete-selected"
-                                class="menu_button my-topbar-test-template-tool-button"
-                                type="button">
-                            删除选定
-                        </button>
-                        <button id="my-topbar-test-template-add"
-                                class="menu_button my-topbar-test-template-tool-button"
-                                type="button">
-                            添加模板
-                        </button>
-                        <button id="my-topbar-test-template-export"
-                                class="menu_button my-topbar-test-template-tool-button"
-                                type="button">
-                            导出
-                        </button>
-                        <button id="my-topbar-test-template-import"
-                                class="menu_button my-topbar-test-template-tool-button"
-                                type="button">
-                            导入
-                        </button>
+                    <div class="my-topbar-test-template-toolbar">
+                        <div class="my-topbar-test-template-preset-bar">
+                            <div class="my-topbar-test-template-preset-drawer">
+                                <button id="my-topbar-test-template-preset-current"
+                                        class="menu_button my-topbar-test-template-preset-current"
+                                        type="button"
+                                        aria-expanded="false">
+                                    <span class="my-topbar-test-template-preset-current-name">默认预设</span>
+                                    <i class="fa-solid fa-chevron-down"></i>
+                                </button>
+                                <div id="my-topbar-test-template-preset-options"
+                                     class="my-topbar-test-template-preset-options"
+                                     style="display: none;"></div>
+                            </div>
+
+                            <div class="my-topbar-test-template-preset-actions">
+                                <button id="my-topbar-test-template-delete-preset"
+                                        class="menu_button my-topbar-test-template-icon-button"
+                                        type="button"
+                                        title="删除预设"
+                                        data-long-press-tip="删除预设"
+                                        aria-label="删除预设">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                                <button id="my-topbar-test-template-add-preset"
+                                        class="menu_button my-topbar-test-template-icon-button"
+                                        type="button"
+                                        title="新增预设"
+                                        data-long-press-tip="新增预设"
+                                        aria-label="新增预设">
+                                    <i class="fa-solid fa-file-circle-plus"></i>
+                                </button>
+                                <button id="my-topbar-test-template-rename-preset"
+                                        class="menu_button my-topbar-test-template-icon-button"
+                                        type="button"
+                                        title="重命名预设"
+                                        data-long-press-tip="重命名预设"
+                                        aria-label="重命名预设">
+                                    <i class="fa-solid fa-pen"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="my-topbar-test-template-tools">
+                            <button id="my-topbar-test-template-add"
+                                    class="menu_button my-topbar-test-template-tool-button"
+                                    type="button">
+                                添加模板
+                            </button>
+                            <button id="my-topbar-test-template-export"
+                                    class="menu_button my-topbar-test-template-tool-button"
+                                    type="button">
+                                导出
+                            </button>
+                            <button id="my-topbar-test-template-import"
+                                    class="menu_button my-topbar-test-template-tool-button"
+                                    type="button">
+                                导入
+                            </button>
+                        </div>
                     </div>
 
                     <div id="my-topbar-test-template-list" class="my-topbar-test-template-list"></div>
@@ -160,12 +199,12 @@
 
                 <div id="my-topbar-test-template-editor-view" class="my-topbar-test-template-editor-view" style="display: none;">
                     <div id="my-topbar-test-template-editor-title" class="my-topbar-test-template-editor-title">编辑模板</div>
-                    <label for="my-topbar-test-template-editor-label" class="my-topbar-test-label">按钮名称</label>
+                    <label for="my-topbar-test-template-editor-label" class="my-topbar-test-label">模板名称</label>
                     <input id="my-topbar-test-template-editor-label"
                            class="text_pole my-topbar-test-template-editor-input"
                            type="text"
                            spellcheck="false"
-                           placeholder="请输入按钮名称"
+                           placeholder="请输入模板名称"
                            autocomplete="off">
                     <label for="my-topbar-test-template-editor-text" class="my-topbar-test-label">模板内容</label>
                     <textarea id="my-topbar-test-template-editor-text"

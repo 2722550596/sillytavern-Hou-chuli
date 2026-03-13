@@ -8,19 +8,17 @@
     const EMPTY_CHAT_TEXT = '当前聊天里还没有可读取的消息。';
     const RANGE_NOT_FOUND_TEXT = '标签内没有找到内容,无法截取';
     const RANGE_INCOMPLETE_TEXT = '请同时填写开始标签和结束标签，或者两个都留空。';
-    const DEFAULT_TEMPLATES = Object.freeze([
+    const DEFAULT_PRESET_NAME = '默认预设';
+    const DEFAULT_TEMPLATE_BLUEPRINTS = Object.freeze([
         Object.freeze({
-            id: 'tmpl_polish',
             label: '润色',
             content: '请润色下面的内容，保持原意不变：\n\n{{text}}',
         }),
         Object.freeze({
-            id: 'tmpl_summary',
             label: '总结',
             content: '请总结下面的内容，并提取重点：\n\n{{text}}',
         }),
         Object.freeze({
-            id: 'tmpl_points',
             label: '提取要点',
             content: '请提取下面内容的核心要点，并用分点方式输出：\n\n{{text}}',
         }),
@@ -31,8 +29,8 @@
         onlyReplaceInTags: false,
         startTag: '',
         endTag: '',
-        templates: DEFAULT_TEMPLATES,
-        selectedTemplateIds: Object.freeze([]),
+        templatePresets: Object.freeze([]),
+        currentTemplatePresetId: '',
         apiConfig: Object.freeze({
             temperature: '1',
             topP: '',
@@ -90,13 +88,19 @@
         templateSettings: '#my-topbar-test-template-settings',
         templateBrowseView: '#my-topbar-test-template-browse-view',
         templateEditorView: '#my-topbar-test-template-editor-view',
+        templatePresetCurrentButton: '#my-topbar-test-template-preset-current',
+        templatePresetOptions: '#my-topbar-test-template-preset-options',
+        templatePresetOptionButton: '.my-topbar-test-template-preset-option',
         templateList: '#my-topbar-test-template-list',
-        templateDeleteSelectedButton: '#my-topbar-test-template-delete-selected',
+        templateDeletePresetButton: '#my-topbar-test-template-delete-preset',
+        templateAddPresetButton: '#my-topbar-test-template-add-preset',
+        templateRenamePresetButton: '#my-topbar-test-template-rename-preset',
         templateAddButton: '#my-topbar-test-template-add',
         templateExportButton: '#my-topbar-test-template-export',
         templateImportButton: '#my-topbar-test-template-import',
         templateImportInput: '#my-topbar-test-template-import-input',
         templateEditButton: '.my-topbar-test-template-edit-button',
+        templateDeleteButton: '.my-topbar-test-template-delete-button',
         templateEditorTitle: '#my-topbar-test-template-editor-title',
         templateEditorLabelInput: '#my-topbar-test-template-editor-label',
         templateEditorTextarea: '#my-topbar-test-template-editor-text',
@@ -138,7 +142,6 @@
         replyModalCloseButton: '#my-topbar-test-reply-modal-close',
 
         templateApplyButton: '.my-topbar-test-template-apply',
-        templateMoveButton: '.my-topbar-test-template-move-button',
         menuBtns: '.my-topbar-test-menu-btn' // 新增菜单按钮统称
     });
 
@@ -167,6 +170,29 @@
         stopRequested: false,
         stoppedByUser: false,
         pendingTimerId: 0,
+    };
+    let templateDeleteConfirmState = {
+        skipForSession: false,
+    };
+    let templatePresetDrawerOpen = false;
+    let templateSortState = {
+        timerId: 0,
+        pointerId: null,
+        startX: 0,
+        startY: 0,
+        templateId: '',
+        isDragging: false,
+        dragOffsetX: 0,
+        dragOffsetY: 0,
+        suppressClick: false,
+    };
+    let mobileLongPressState = {
+        timerId: 0,
+        pointerId: null,
+        startX: 0,
+        startY: 0,
+        shown: false,
+        suppressClick: false,
     };
 
     function log(...args) {
@@ -201,6 +227,41 @@
         return `my_topbar_test_template_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 8)}`;
     }
 
+    function createPresetId(index = 0) {
+        return `my_topbar_test_preset_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    function createDefaultTemplateItems() {
+        return DEFAULT_TEMPLATE_BLUEPRINTS.map((item, index) => ({
+            id: createTemplateId(index),
+            label: item.label,
+            content: item.content,
+        }));
+    }
+
+    function createDefaultPreset(name = DEFAULT_PRESET_NAME) {
+        return {
+            id: createPresetId(),
+            name,
+            templates: createDefaultTemplateItems(),
+            selectedTemplateIds: [],
+        };
+    }
+
+    function createDefaultSettings() {
+        const preset = createDefaultPreset();
+
+        return {
+            keepTags: DEFAULT_SETTINGS.keepTags,
+            onlyReplaceInTags: DEFAULT_SETTINGS.onlyReplaceInTags,
+            startTag: DEFAULT_SETTINGS.startTag,
+            endTag: DEFAULT_SETTINGS.endTag,
+            templatePresets: [preset],
+            currentTemplatePresetId: preset.id,
+            apiConfig: deepClone(DEFAULT_SETTINGS.apiConfig),
+        };
+    }
+
     function normalizeTemplateItem(item, index = 0) {
         return {
             id: String(item?.id ?? '').trim() || createTemplateId(index),
@@ -209,9 +270,9 @@
         };
     }
 
-    function normalizeTemplateList(rawTemplates) {
+    function normalizeTemplateList(rawTemplates, fallbackTemplates = createDefaultTemplateItems()) {
         if (!Array.isArray(rawTemplates)) {
-            return deepClone(DEFAULT_SETTINGS.templates);
+            return deepClone(fallbackTemplates);
         }
 
         return rawTemplates.map((item, index) => normalizeTemplateItem(item, index));
@@ -240,6 +301,26 @@
         return selectedTemplateIds;
     }
 
+    function normalizePresetItem(item, index = 0) {
+        const fallbackTemplates = index === 0 ? createDefaultTemplateItems() : [];
+        const templates = normalizeTemplateList(item?.templates, fallbackTemplates);
+
+        return {
+            id: String(item?.id ?? '').trim() || createPresetId(index),
+            name: String(item?.name ?? item?.label ?? '').trim() || (index === 0 ? DEFAULT_PRESET_NAME : `${DEFAULT_PRESET_NAME}(${index})`),
+            templates,
+            selectedTemplateIds: normalizeSelectedTemplateIds(item?.selectedTemplateIds, templates),
+        };
+    }
+
+    function normalizePresetList(rawPresets) {
+        if (!Array.isArray(rawPresets) || rawPresets.length === 0) {
+            return [createDefaultPreset()];
+        }
+
+        return rawPresets.map((item, index) => normalizePresetItem(item, index));
+    }
+
     function normalizeApiConfig(rawApiConfig) {
         const source = rawApiConfig && typeof rawApiConfig === 'object' && !Array.isArray(rawApiConfig)
             ? rawApiConfig
@@ -266,7 +347,7 @@
         let settings = extensionSettings[MODULE_NAME];
 
         if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
-            extensionSettings[MODULE_NAME] = deepClone(DEFAULT_SETTINGS);
+            extensionSettings[MODULE_NAME] = createDefaultSettings();
             settings = extensionSettings[MODULE_NAME];
             return settings;
         }
@@ -289,11 +370,52 @@
 
         settings.startTag = normalizeTagName(settings.startTag);
         settings.endTag = normalizeTagName(settings.endTag);
-        settings.templates = normalizeTemplateList(settings.templates);
-        settings.selectedTemplateIds = normalizeSelectedTemplateIds(settings.selectedTemplateIds, settings.templates);
+
+        if (!Array.isArray(settings.templatePresets)) {
+            const migratedTemplates = normalizeTemplateList(settings.templates, createDefaultTemplateItems());
+            const migratedPreset = {
+                id: createPresetId(),
+                name: DEFAULT_PRESET_NAME,
+                templates: migratedTemplates,
+                selectedTemplateIds: normalizeSelectedTemplateIds(settings.selectedTemplateIds, migratedTemplates),
+            };
+
+            settings.templatePresets = [migratedPreset];
+            settings.currentTemplatePresetId = migratedPreset.id;
+        }
+
+        settings.templatePresets = normalizePresetList(settings.templatePresets);
+        if (!String(settings.currentTemplatePresetId ?? '').trim()) {
+            settings.currentTemplatePresetId = settings.templatePresets[0].id;
+        }
+
+        if (!settings.templatePresets.some(item => item.id === settings.currentTemplatePresetId)) {
+            settings.currentTemplatePresetId = settings.templatePresets[0].id;
+        }
+
+        delete settings.templates;
+        delete settings.selectedTemplateIds;
         settings.apiConfig = normalizeApiConfig(settings.apiConfig);
 
         return settings;
+    }
+
+    function getTemplatePresets(settings = loadSettings()) {
+        return Array.isArray(settings.templatePresets) ? settings.templatePresets : [];
+    }
+
+    function findPresetIndexById(presetId, settings = loadSettings()) {
+        const normalizedPresetId = String(presetId ?? '').trim();
+        return getTemplatePresets(settings).findIndex(item => item.id === normalizedPresetId);
+    }
+
+    function getCurrentTemplatePreset(settings = loadSettings()) {
+        const presetIndex = findPresetIndexById(settings.currentTemplatePresetId, settings);
+        if (presetIndex >= 0) {
+            return settings.templatePresets[presetIndex];
+        }
+
+        return settings.templatePresets[0] || null;
     }
 
     function isAutoTriggerEnabledForCurrentChat() {
@@ -1833,18 +1955,32 @@
     }
 
     function findTemplateById(templateId) {
-        const settings = loadSettings();
-        return settings.templates.find(item => item.id === templateId) || null;
+        const currentPreset = getCurrentTemplatePreset();
+        if (!currentPreset) {
+            return null;
+        }
+
+        return currentPreset.templates.find(item => item.id === templateId) || null;
     }
 
     function getSelectedTemplateList(settings = loadSettings()) {
-        const selectedTemplateIdSet = new Set(settings.selectedTemplateIds);
-        return settings.templates.filter(item => selectedTemplateIdSet.has(item.id));
+        const currentPreset = getCurrentTemplatePreset(settings);
+        if (!currentPreset) {
+            return [];
+        }
+
+        const selectedTemplateIdSet = new Set(currentPreset.selectedTemplateIds);
+        return currentPreset.templates.filter(item => selectedTemplateIdSet.has(item.id));
     }
 
     function hasTemplateLabel(label, templates, excludedTemplateId = '') {
         const normalizedLabel = String(label ?? '').trim();
         return templates.some(item => item.id !== excludedTemplateId && String(item.label ?? '').trim() === normalizedLabel);
+    }
+
+    function hasPresetName(name, presets, excludedPresetId = '') {
+        const normalizedName = String(name ?? '').trim();
+        return presets.some(item => item.id !== excludedPresetId && String(item.name ?? '').trim() === normalizedName);
     }
 
     function getNextDefaultTemplateLabel(templates) {
@@ -1858,6 +1994,21 @@
         }
 
         return `默认模板${index}`;
+    }
+
+    function getUniquePresetName(baseName, presets, excludedPresetId = '') {
+        const normalizedBaseName = String(baseName ?? '').trim() || DEFAULT_PRESET_NAME;
+
+        if (!hasPresetName(normalizedBaseName, presets, excludedPresetId)) {
+            return normalizedBaseName;
+        }
+
+        let index = 1;
+        while (hasPresetName(`${normalizedBaseName}(${index})`, presets, excludedPresetId)) {
+            index += 1;
+        }
+
+        return `${normalizedBaseName}(${index})`;
     }
 
     function stripFileExtension(fileName) {
@@ -1951,6 +2102,300 @@
         showTemplateEditorView();
     }
 
+    function setTemplatePresetDrawerOpen(isOpen) {
+        templatePresetDrawerOpen = Boolean(isOpen);
+        const $button = $(SELECTORS.templatePresetCurrentButton);
+        const $options = $(SELECTORS.templatePresetOptions);
+
+        $button.toggleClass('is-open', templatePresetDrawerOpen);
+        $button.attr('aria-expanded', String(templatePresetDrawerOpen));
+        $options.toggle(templatePresetDrawerOpen);
+    }
+
+    function closeTemplatePresetDrawer() {
+        setTemplatePresetDrawerOpen(false);
+    }
+
+    function toggleTemplatePresetDrawer() {
+        setTemplatePresetDrawerOpen(!templatePresetDrawerOpen);
+    }
+
+    function syncTemplatePresetUi() {
+        const $button = $(SELECTORS.templatePresetCurrentButton);
+        const $options = $(SELECTORS.templatePresetOptions);
+        if (!$button.length || !$options.length) {
+            return;
+        }
+
+        const settings = loadSettings();
+        const currentPreset = getCurrentTemplatePreset(settings);
+        const currentPresetName = currentPreset ? currentPreset.name : DEFAULT_PRESET_NAME;
+        $button.find('.my-topbar-test-template-preset-current-name').text(currentPresetName);
+        $button.attr('title', `当前预设：${currentPresetName}`);
+        $button.attr('aria-label', `当前预设：${currentPresetName}`);
+
+        const otherPresets = getTemplatePresets(settings).filter(item => !currentPreset || item.id !== currentPreset.id);
+        if (otherPresets.length === 0) {
+            $options.html(`
+                <div class="my-topbar-test-template-preset-empty">
+                    暂无其他预设
+                </div>
+            `);
+        } else {
+            $options.html(otherPresets.map(item => `
+                <button type="button"
+                        class="menu_button my-topbar-test-template-preset-option"
+                        data-preset-id="${escapeHtml(item.id)}"
+                        title="切换到预设：${escapeHtml(item.name)}"
+                        aria-label="切换到预设：${escapeHtml(item.name)}">
+                    ${escapeHtml(item.name)}
+                </button>
+            `).join(''));
+        }
+
+        setTemplatePresetDrawerOpen(templatePresetDrawerOpen);
+    }
+
+    async function showTemplateActionDialog(options) {
+        const title = String(options?.title ?? '提示');
+        const message = String(options?.message ?? '');
+        const checkboxLabel = String(options?.checkboxLabel ?? '').trim();
+        const buttons = Array.isArray(options?.buttons) && options.buttons.length > 0
+            ? options.buttons
+            : [{ value: 'confirm', label: '确认', primary: true }];
+
+        return await new Promise(resolve => {
+            const $dialog = $(`
+                <div class="my-topbar-test-action-dialog-overlay">
+                    <div class="my-topbar-test-action-dialog-card" role="dialog" aria-modal="true">
+                        <div class="my-topbar-test-action-dialog-title"></div>
+                        <div class="my-topbar-test-action-dialog-message"></div>
+                        <label class="my-topbar-test-action-dialog-checkbox" style="display: none;">
+                            <input type="checkbox" class="my-topbar-test-action-dialog-checkbox-input">
+                            <span class="my-topbar-test-action-dialog-checkbox-text"></span>
+                        </label>
+                        <div class="my-topbar-test-action-dialog-actions"></div>
+                    </div>
+                </div>
+            `);
+
+            $dialog.find('.my-topbar-test-action-dialog-title').text(title);
+            $dialog.find('.my-topbar-test-action-dialog-message').text(message);
+
+            if (checkboxLabel) {
+                $dialog.find('.my-topbar-test-action-dialog-checkbox').show();
+                $dialog.find('.my-topbar-test-action-dialog-checkbox-text').text(checkboxLabel);
+            }
+
+            const $actions = $dialog.find('.my-topbar-test-action-dialog-actions');
+            buttons.forEach(button => {
+                const label = String(button?.label ?? button?.value ?? '确认');
+                const value = String(button?.value ?? label);
+                const $button = $(
+                    `<button type="button" class="menu_button my-topbar-test-action-dialog-button"></button>`
+                );
+                $button.text(label);
+                $button.attr('data-dialog-action', value);
+                $button.toggleClass('is-primary', Boolean(button?.primary));
+                $actions.append($button);
+            });
+
+            const finalize = (action) => {
+                const checked = $dialog.find('.my-topbar-test-action-dialog-checkbox-input').is(':checked');
+                $dialog.remove();
+                resolve({
+                    action,
+                    checked,
+                });
+            };
+
+            $dialog.find('.my-topbar-test-action-dialog-button').on('click', function () {
+                finalize(String($(this).attr('data-dialog-action') ?? 'cancel'));
+            });
+            $dialog.find('.my-topbar-test-action-dialog-card').on('click', function (event) {
+                event.stopPropagation();
+            });
+
+            $('body').append($dialog);
+        });
+    }
+
+    function showMobileLongPressTip(target, text) {
+        $('.my-topbar-test-mobile-longpress-tip').remove();
+        const $tip = $('<div class="my-topbar-test-mobile-longpress-tip"></div>');
+        $tip.text(String(text ?? ''));
+        $('body').append($tip);
+
+        const targetRect = target.getBoundingClientRect();
+        const tipRect = $tip.get(0)?.getBoundingClientRect();
+        const tipWidth = tipRect?.width || 0;
+        const tipHeight = tipRect?.height || 0;
+        const left = Math.max(12, Math.min(targetRect.left + (targetRect.width / 2) - (tipWidth / 2), window.innerWidth - tipWidth - 12));
+        const top = Math.max(12, targetRect.top - tipHeight - 10);
+
+        $tip.css({
+            left: `${left + window.scrollX}px`,
+            top: `${top + window.scrollY}px`,
+        });
+
+        window.setTimeout(() => {
+            $tip.fadeOut(160, () => {
+                $tip.remove();
+            });
+        }, 1200);
+    }
+
+    function resetMobileLongPressState() {
+        if (mobileLongPressState.timerId) {
+            window.clearTimeout(mobileLongPressState.timerId);
+        }
+
+        mobileLongPressState = {
+            timerId: 0,
+            pointerId: null,
+            startX: 0,
+            startY: 0,
+            shown: false,
+            suppressClick: mobileLongPressState.shown,
+        };
+    }
+
+    function beginMobileLongPressTip(pointerId, startX, startY, target, text) {
+        resetMobileLongPressState();
+        mobileLongPressState.pointerId = pointerId;
+        mobileLongPressState.startX = startX;
+        mobileLongPressState.startY = startY;
+        mobileLongPressState.timerId = window.setTimeout(() => {
+            mobileLongPressState.shown = true;
+            mobileLongPressState.suppressClick = true;
+            showMobileLongPressTip(target, text);
+        }, 450);
+    }
+
+    function consumeMobileLongPressClickSuppression() {
+        if (!mobileLongPressState.suppressClick) {
+            return false;
+        }
+
+        mobileLongPressState.suppressClick = false;
+        return true;
+    }
+
+    async function askTextInputDialog(title, message, defaultValue = '') {
+        try {
+            if (Popup && Popup.show && typeof Popup.show.input === 'function') {
+                const result = await Popup.show.input(title, message, defaultValue);
+                return result === null || result === undefined ? null : String(result);
+            }
+        } catch (error) {
+            console.warn(`[${MODULE_NAME}] Popup.input 调用失败，改用原生 prompt。`, error);
+        }
+
+        const result = window.prompt(`${title}\n\n${message}`, defaultValue);
+        return result === null ? null : String(result);
+    }
+
+    async function switchTemplatePreset(presetId) {
+        const settings = loadSettings();
+        const nextPresetIndex = findPresetIndexById(presetId, settings);
+        if (nextPresetIndex === -1 || settings.currentTemplatePresetId === presetId) {
+            closeTemplatePresetDrawer();
+            return;
+        }
+
+        const confirmed = await confirmExitTemplateEditorIfDirty();
+        if (!confirmed) {
+            return;
+        }
+
+        leaveTemplateEditor();
+        settings.currentTemplatePresetId = settings.templatePresets[nextPresetIndex].id;
+        savePluginSettings();
+        closeTemplatePresetDrawer();
+        renderTemplateList();
+        syncOutputFromSelectedTemplates();
+        showMessage('success', `已切换到预设“${settings.templatePresets[nextPresetIndex].name}”。`);
+    }
+
+    async function addTemplatePreset() {
+        const confirmed = await confirmExitTemplateEditorIfDirty();
+        if (!confirmed) {
+            return;
+        }
+
+        const settings = loadSettings();
+        const presetName = getUniquePresetName(DEFAULT_PRESET_NAME, settings.templatePresets);
+        const preset = createDefaultPreset(presetName);
+        settings.templatePresets.push(preset);
+        settings.currentTemplatePresetId = preset.id;
+
+        leaveTemplateEditor();
+        savePluginSettings();
+        closeTemplatePresetDrawer();
+        renderTemplateList();
+        syncOutputFromSelectedTemplates();
+        showMessage('success', `已新增预设“${presetName}”。`);
+    }
+
+    async function renameCurrentTemplatePreset() {
+        const settings = loadSettings();
+        const currentPreset = getCurrentTemplatePreset(settings);
+        if (!currentPreset) {
+            return;
+        }
+
+        const nextNameInput = await askTextInputDialog('重命名预设', '请输入新的预设名称。', currentPreset.name);
+        if (nextNameInput === null) {
+            return;
+        }
+
+        const trimmedName = nextNameInput.trim();
+        if (!trimmedName) {
+            showMessage('warning', '预设名称不能为空。');
+            return;
+        }
+
+        const nextName = getUniquePresetName(trimmedName, settings.templatePresets, currentPreset.id);
+        currentPreset.name = nextName;
+        savePluginSettings();
+        renderTemplateList();
+        showMessage('success', `预设已重命名为“${nextName}”。`);
+    }
+
+    async function deleteCurrentTemplatePreset() {
+        const settings = loadSettings();
+        const currentPreset = getCurrentTemplatePreset(settings);
+        if (!currentPreset) {
+            return;
+        }
+
+        const confirmed = await confirmExitTemplateEditorIfDirty();
+        if (!confirmed) {
+            return;
+        }
+
+        const currentPresetIndex = findPresetIndexById(currentPreset.id, settings);
+        settings.templatePresets = settings.templatePresets.filter(item => item.id !== currentPreset.id);
+
+        if (settings.templatePresets.length === 0) {
+            const fallbackPreset = createDefaultPreset();
+            settings.templatePresets = [fallbackPreset];
+            settings.currentTemplatePresetId = fallbackPreset.id;
+        } else {
+            const nextPreset = settings.templatePresets[currentPresetIndex]
+                || settings.templatePresets[currentPresetIndex - 1]
+                || settings.templatePresets[0];
+            settings.currentTemplatePresetId = nextPreset.id;
+        }
+
+        leaveTemplateEditor();
+        savePluginSettings();
+        closeTemplatePresetDrawer();
+        renderTemplateList();
+        syncOutputFromSelectedTemplates();
+        showMessage('success', `已删除预设“${currentPreset.name}”。`);
+    }
+
     async function openTemplateEditor(templateId) {
         const template = findTemplateById(templateId);
         if (!template) {
@@ -1964,6 +2409,8 @@
                 return;
             }
         }
+
+        closeTemplatePresetDrawer();
 
         if (!templateEditorState || templateEditorState.templateId !== templateId) {
             templateEditorState = {
@@ -2013,15 +2460,14 @@
 
         const nextLabel = getTemplateEditorDraftLabel().trim();
         if (!nextLabel) {
-            showMessage('warning', '按钮名称不能为空。');
+            showMessage('warning', '模板名称不能为空。');
             return;
         }
 
         template.label = nextLabel;
-        const nextContent = getTemplateEditorDraftContent();
-        template.content = nextContent;
-        templateEditorState.originalLabel = nextLabel;
-        templateEditorState.originalContent = nextContent;
+        template.content = getTemplateEditorDraftContent();
+        templateEditorState.originalLabel = template.label;
+        templateEditorState.originalContent = template.content;
 
         savePluginSettings();
         renderTemplateList();
@@ -2032,10 +2478,14 @@
 
     function addTemplate() {
         const settings = loadSettings();
-        const label = getNextDefaultTemplateLabel(settings.templates);
+        const currentPreset = getCurrentTemplatePreset(settings);
+        if (!currentPreset) {
+            return;
+        }
 
-        settings.templates.push({
-            id: createTemplateId(settings.templates.length),
+        const label = getNextDefaultTemplateLabel(currentPreset.templates);
+        currentPreset.templates.push({
+            id: createTemplateId(currentPreset.templates.length),
             label,
             content: '',
         });
@@ -2061,30 +2511,76 @@
         }, 0);
     }
 
-    function exportSelectedTemplates() {
-        const settings = loadSettings();
-        const selectedTemplates = getSelectedTemplateList(settings);
+    function buildPresetExportPayload(preset) {
+        const selectedTemplateIdSet = new Set(preset.selectedTemplateIds);
+        return {
+            type: 'my_topbar_test_template_preset',
+            name: preset.name,
+            templates: preset.templates.map((item, index) => ({
+                label: item.label,
+                content: item.content,
+                sortIndex: index,
+                selected: selectedTemplateIdSet.has(item.id),
+            })),
+        };
+    }
 
-        if (selectedTemplates.length === 0) {
-            showMessage('warning', '请先选定要导出的模板按钮。');
+    function buildTemplateExportPayload(templates) {
+        return {
+            type: 'my_topbar_test_templates',
+            templates: templates.map((item, index) => ({
+                label: item.label,
+                content: item.content,
+                sortIndex: index,
+            })),
+        };
+    }
+
+    async function exportTemplateData() {
+        const settings = loadSettings();
+        const currentPreset = getCurrentTemplatePreset(settings);
+        if (!currentPreset) {
+            showMessage('warning', '当前没有可导出的预设。');
+            return;
+        }
+
+        const dialogResult = await showTemplateActionDialog({
+            title: '导出模板预设',
+            message: '请选择导出内容。',
+            buttons: [
+                { value: 'cancel', label: '取消' },
+                { value: 'templates', label: '导出当前选定模板' },
+                { value: 'preset', label: '导出当前预设', primary: true },
+            ],
+        });
+
+        if (dialogResult.action === 'cancel') {
             return;
         }
 
         try {
-            selectedTemplates.forEach(template => {
-                const fileContent = JSON.stringify({
-                    id: template.id,
-                    label: template.label,
-                    content: template.content,
-                }, null, 2);
+            if (dialogResult.action === 'preset') {
+                const fileContent = JSON.stringify(buildPresetExportPayload(currentPreset), null, 2);
+                downloadTextFile(`${currentPreset.name}.json`, fileContent, 'application/json;charset=utf-8');
+                showMessage('success', `已导出预设“${currentPreset.name}”。`);
+                return;
+            }
 
-                downloadTextFile(`${template.label}.json`, fileContent, 'application/json;charset=utf-8');
-            });
+            const selectedTemplates = getSelectedTemplateList(settings);
+            if (selectedTemplates.length === 0) {
+                showMessage('warning', '请先选定要导出的模板。');
+                return;
+            }
 
+            const fileContent = JSON.stringify(buildTemplateExportPayload(selectedTemplates), null, 2);
+            const fileName = selectedTemplates.length === 1
+                ? `${selectedTemplates[0].label}.json`
+                : '已选模板.json';
+            downloadTextFile(fileName, fileContent, 'application/json;charset=utf-8');
             showMessage('success', `已导出 ${selectedTemplates.length} 个模板。`);
         } catch (error) {
-            console.error(`[${MODULE_NAME}] 导出模板失败`, error);
-            showMessage('error', '导出模板失败。');
+            console.error(`[${MODULE_NAME}] 导出模板预设失败`, error);
+            showMessage('error', '导出模板预设失败。');
         }
     }
 
@@ -2114,6 +2610,94 @@
         });
     }
 
+    function normalizeImportedTemplateEntries(rawTemplates, fileName = '', includeSelected = false) {
+        if (!Array.isArray(rawTemplates)) {
+            throw new Error('导入失败：模板列表格式不正确。');
+        }
+
+        return rawTemplates.map((item, index) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item) || !Object.prototype.hasOwnProperty.call(item, 'content')) {
+                throw new Error('导入失败：模板数据缺少 content 字段。');
+            }
+
+            if (item.content !== null && typeof item.content !== 'string') {
+                throw new Error('导入失败：content 必须是字符串。');
+            }
+
+            const fallbackLabel = index === 0 ? (stripFileExtension(fileName) || '模板') : `模板${index + 1}`;
+            return {
+                label: String(item.label ?? item.name ?? fallbackLabel).trim() || fallbackLabel,
+                content: String(item.content ?? ''),
+                selected: includeSelected && Boolean(item.selected),
+            };
+        });
+    }
+
+    function detectImportedTemplatePayload(parsed, fileName = '') {
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new Error('导入失败：JSON 格式不正确。');
+        }
+
+        if (Array.isArray(parsed.templates)) {
+            const type = String(parsed.type ?? '').trim();
+            if (type === 'my_topbar_test_template_preset' || Object.prototype.hasOwnProperty.call(parsed, 'name')) {
+                return {
+                    type: 'preset',
+                    name: String(parsed.name ?? parsed.label ?? stripFileExtension(fileName) ?? '').trim() || DEFAULT_PRESET_NAME,
+                    templates: normalizeImportedTemplateEntries(parsed.templates, fileName, true),
+                };
+            }
+
+            return {
+                type: 'templates',
+                templates: normalizeImportedTemplateEntries(parsed.templates, fileName, false),
+            };
+        }
+
+        if (Object.prototype.hasOwnProperty.call(parsed, 'content')) {
+            if (parsed.content !== null && typeof parsed.content !== 'string') {
+                throw new Error('导入失败：content 必须是字符串。');
+            }
+
+            const fallbackLabel = stripFileExtension(fileName) || '模板';
+            return {
+                type: 'templates',
+                templates: [{
+                    label: String(parsed.label ?? fallbackLabel).trim() || fallbackLabel,
+                    content: String(parsed.content ?? ''),
+                    selected: false,
+                }],
+            };
+        }
+
+        throw new Error('导入失败：无法识别导入内容。');
+    }
+
+    function createPresetFromImportedPayload(payload, settings) {
+        const templates = [];
+        const selectedTemplateIds = [];
+
+        payload.templates.forEach(item => {
+            const nextLabel = getNextImportedTemplateLabel(item.label, templates);
+            const template = {
+                id: createTemplateId(templates.length),
+                label: nextLabel,
+                content: item.content,
+            };
+            templates.push(template);
+            if (item.selected) {
+                selectedTemplateIds.push(template.id);
+            }
+        });
+
+        return {
+            id: createPresetId(settings.templatePresets.length),
+            name: getUniquePresetName(payload.name, settings.templatePresets),
+            templates,
+            selectedTemplateIds,
+        };
+    }
+
     async function importTemplateFromFile(file) {
         if (!file) {
             return;
@@ -2126,30 +2710,43 @@
 
             const fileText = await readFileAsText(file);
             const parsed = JSON.parse(fileText);
-
-            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || !Object.prototype.hasOwnProperty.call(parsed, 'content')) {
-                throw new Error('导入失败：JSON 中缺少 content 字段。');
-            }
-
-            if (parsed.content !== null && typeof parsed.content !== 'string') {
-                throw new Error('导入失败：content 必须是字符串。');
-            }
-
+            const payload = detectImportedTemplatePayload(parsed, file.name);
             const settings = loadSettings();
-            const label = getNextImportedTemplateLabel(stripFileExtension(file.name), settings.templates);
 
-            settings.templates.push({
-                id: createTemplateId(settings.templates.length),
-                label,
-                content: String(parsed.content ?? ''),
+            if (payload.type === 'preset') {
+                const preset = createPresetFromImportedPayload(payload, settings);
+                settings.templatePresets.push(preset);
+                savePluginSettings();
+                renderTemplateList();
+                showMessage('success', `已导入预设“${preset.name}”。`);
+                return;
+            }
+
+            const confirmed = await askConfirmDialog('导入模板', '模板会导入当前预设是否确认');
+            if (!confirmed) {
+                return;
+            }
+
+            const currentPreset = getCurrentTemplatePreset(settings);
+            if (!currentPreset) {
+                throw new Error('导入失败：没有找到当前预设。');
+            }
+
+            payload.templates.forEach(item => {
+                const nextLabel = getNextImportedTemplateLabel(item.label, currentPreset.templates);
+                currentPreset.templates.push({
+                    id: createTemplateId(currentPreset.templates.length),
+                    label: nextLabel,
+                    content: item.content,
+                });
             });
 
             savePluginSettings();
             renderTemplateList();
-            showMessage('success', `已导入模板“${label}”。`);
+            showMessage('success', `已导入 ${payload.templates.length} 个模板。`);
         } catch (error) {
-            console.error(`[${MODULE_NAME}] 导入模板失败`, error);
-            showMessage('error', error instanceof Error ? error.message : '导入模板失败。');
+            console.error(`[${MODULE_NAME}] 导入模板预设失败`, error);
+            showMessage('error', error instanceof Error ? error.message : '导入模板预设失败。');
         } finally {
             $(SELECTORS.templateImportInput).val('');
         }
@@ -2199,12 +2796,17 @@
     function toggleTemplateSelection(templateId) {
         const template = findTemplateById(templateId);
         if (!template) {
-            showMessage('warning', '没有找到对应的模板按钮。');
+            showMessage('warning', '没有找到对应的模板。');
             return;
         }
 
         const settings = loadSettings();
-        const selectedTemplateIds = settings.selectedTemplateIds;
+        const currentPreset = getCurrentTemplatePreset(settings);
+        if (!currentPreset) {
+            return;
+        }
+
+        const selectedTemplateIds = currentPreset.selectedTemplateIds;
         const selectedIndex = selectedTemplateIds.indexOf(templateId);
 
         if (selectedIndex === -1) {
@@ -2218,38 +2820,52 @@
         syncOutputFromSelectedTemplates();
     }
 
-    function moveTemplate(templateId, direction) {
-        const settings = loadSettings();
-        const list = settings.templates;
-        const currentIndex = list.findIndex(item => item.id === templateId);
-
-        if (currentIndex === -1) {
-            return;
+    async function confirmDeleteTemplate(template) {
+        if (templateDeleteConfirmState.skipForSession) {
+            return true;
         }
 
-        const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+        const result = await showTemplateActionDialog({
+            title: '删除模板',
+            message: `确定删除模板“${template.label}”吗？`,
+            checkboxLabel: '本次使用不再提示',
+            buttons: [
+                { value: 'cancel', label: '取消' },
+                { value: 'confirm', label: '删除', primary: true },
+            ],
+        });
 
-        if (targetIndex < 0 || targetIndex >= list.length) {
-            return;
+        if (result.action !== 'confirm') {
+            return false;
         }
 
-        [list[currentIndex], list[targetIndex]] = [list[targetIndex], list[currentIndex]];
-        savePluginSettings();
-        renderTemplateList();
-        syncOutputFromSelectedTemplates();
+        if (result.checked) {
+            templateDeleteConfirmState.skipForSession = true;
+        }
+
+        return true;
     }
 
-    function deleteTemplateById(templateId) {
+    async function deleteTemplateById(templateId) {
         const settings = loadSettings();
-        const originalLength = settings.templates.length;
-
-        settings.templates = settings.templates.filter(item => item.id !== templateId);
-
-        if (settings.templates.length === originalLength) {
+        const currentPreset = getCurrentTemplatePreset(settings);
+        if (!currentPreset) {
             return;
         }
 
-        settings.selectedTemplateIds = settings.selectedTemplateIds.filter(id => id !== templateId);
+        const template = currentPreset.templates.find(item => item.id === templateId) || null;
+        if (!template) {
+            showMessage('warning', '没有找到要删除的模板。');
+            return;
+        }
+
+        const confirmed = await confirmDeleteTemplate(template);
+        if (!confirmed) {
+            return;
+        }
+
+        currentPreset.templates = currentPreset.templates.filter(item => item.id !== templateId);
+        currentPreset.selectedTemplateIds = currentPreset.selectedTemplateIds.filter(id => id !== templateId);
         if (templateEditorState && templateEditorState.templateId === templateId) {
             leaveTemplateEditor();
         }
@@ -2257,39 +2873,154 @@
         savePluginSettings();
         renderTemplateList();
         syncOutputFromSelectedTemplates();
-        showMessage('success', '模板按钮已删除。');
+        showMessage('success', '模板已删除。');
     }
 
-    async function handleDeleteSelectedTemplates() {
+    function getTemplateItemElement(templateId) {
+        return $(SELECTORS.templateList)
+            .find('.my-topbar-test-template-item')
+            .filter(function () {
+                return String($(this).attr('data-template-id') ?? '') === String(templateId ?? '');
+            })
+            .first();
+    }
+
+    function consumeTemplateSortClickSuppression() {
+        if (!templateSortState.suppressClick) {
+            return false;
+        }
+
+        templateSortState.suppressClick = false;
+        return true;
+    }
+
+    function resetTemplateSortState() {
+        if (templateSortState.timerId) {
+            window.clearTimeout(templateSortState.timerId);
+        }
+
+        const shouldSuppressClick = templateSortState.suppressClick || templateSortState.isDragging;
+
+        templateSortState = {
+            timerId: 0,
+            pointerId: null,
+            startX: 0,
+            startY: 0,
+            templateId: '',
+            isDragging: false,
+            dragOffsetX: 0,
+            dragOffsetY: 0,
+            suppressClick: shouldSuppressClick,
+        };
+
+        $('body').removeClass('my-topbar-test-template-dragging');
+        $(SELECTORS.templateList)
+            .find('.my-topbar-test-template-item')
+            .removeClass('is-dragging')
+            .css({
+                '--my-topbar-test-drag-x': '',
+                '--my-topbar-test-drag-y': '',
+                '--my-topbar-test-drag-origin-x': '',
+                '--my-topbar-test-drag-origin-y': '',
+            });
+    }
+
+    function beginTemplateSortPress(templateId, pointerId, startX, startY) {
+        resetTemplateSortState();
+        templateSortState.pointerId = pointerId;
+        templateSortState.startX = startX;
+        templateSortState.startY = startY;
+        templateSortState.templateId = String(templateId ?? '');
+        templateSortState.timerId = window.setTimeout(() => {
+            const $item = getTemplateItemElement(templateSortState.templateId);
+            if (!$item.length) {
+                resetTemplateSortState();
+                return;
+            }
+
+            const rect = $item.get(0)?.getBoundingClientRect();
+            templateSortState.isDragging = true;
+            templateSortState.suppressClick = true;
+            templateSortState.dragOffsetX = rect ? templateSortState.startX - rect.left : 0;
+            templateSortState.dragOffsetY = rect ? templateSortState.startY - rect.top : 0;
+            $item
+                .addClass('is-dragging')
+                .css({
+                    '--my-topbar-test-drag-origin-x': `${templateSortState.dragOffsetX}px`,
+                    '--my-topbar-test-drag-origin-y': `${templateSortState.dragOffsetY}px`,
+                });
+            $('body').addClass('my-topbar-test-template-dragging');
+        }, 320);
+    }
+
+    function updateDraggedTemplatePosition(clientX, clientY) {
+        if (!templateSortState.isDragging) {
+            return;
+        }
+
+        const $item = getTemplateItemElement(templateSortState.templateId);
+        if (!$item.length) {
+            return;
+        }
+
+        const offsetX = clientX - templateSortState.startX;
+        const offsetY = clientY - templateSortState.startY;
+        $item.css({
+            '--my-topbar-test-drag-x': `${offsetX}px`,
+            '--my-topbar-test-drag-y': `${offsetY}px`,
+        });
+    }
+
+    function maybeMoveDraggedTemplate(clientX, clientY) {
+        if (!templateSortState.isDragging) {
+            return;
+        }
+
+        const draggedItem = getTemplateItemElement(templateSortState.templateId).get(0);
+        const listElement = $(SELECTORS.templateList).get(0);
+        if (!draggedItem || !listElement) {
+            return;
+        }
+
+        const target = document.elementFromPoint(clientX, clientY)?.closest('.my-topbar-test-template-item');
+        if (!target || target === draggedItem || target.parentElement !== listElement) {
+            return;
+        }
+
+        const targetRect = target.getBoundingClientRect();
+        const shouldInsertAfter = clientY >= targetRect.top + (targetRect.height / 2);
+        listElement.insertBefore(draggedItem, shouldInsertAfter ? target.nextElementSibling : target);
+    }
+
+    function finalizeTemplateSort() {
+        if (!templateSortState.isDragging) {
+            resetTemplateSortState();
+            return;
+        }
+
         const settings = loadSettings();
-        const selectedTemplates = getSelectedTemplateList(settings);
-
-        if (selectedTemplates.length === 0) {
-            showMessage('warning', '请先选定要删除的模板按钮。');
+        const currentPreset = getCurrentTemplatePreset(settings);
+        if (!currentPreset) {
+            resetTemplateSortState();
             return;
         }
 
-        const confirmed = await askConfirmDialog(
-            '删除选定模板',
-            `确定删除已选定的 ${selectedTemplates.length} 个模板按钮吗？`
-        );
+        const orderedTemplateIds = $(SELECTORS.templateList)
+            .find('.my-topbar-test-template-item')
+            .map(function () {
+                return String($(this).attr('data-template-id') ?? '');
+            })
+            .get();
 
-        if (!confirmed) {
-            return;
-        }
-
-        const selectedTemplateIdSet = new Set(selectedTemplates.map(item => item.id));
-        settings.templates = settings.templates.filter(item => !selectedTemplateIdSet.has(item.id));
-        settings.selectedTemplateIds = [];
-
-        if (templateEditorState && selectedTemplateIdSet.has(templateEditorState.templateId)) {
-            leaveTemplateEditor();
-        }
+        const templateMap = new Map(currentPreset.templates.map(item => [item.id, item]));
+        currentPreset.templates = orderedTemplateIds
+            .map(id => templateMap.get(id) || null)
+            .filter(Boolean);
 
         savePluginSettings();
         renderTemplateList();
         syncOutputFromSelectedTemplates();
-        showMessage('success', `已删除 ${selectedTemplates.length} 个模板按钮。`);
+        resetTemplateSortState();
     }
 
     function renderTemplateList() {
@@ -2299,63 +3030,54 @@
         }
 
         const settings = loadSettings();
-        const templates = Array.isArray(settings.templates) ? settings.templates : [];
-        const selectedTemplateIdSet = new Set(settings.selectedTemplateIds);
+        const currentPreset = getCurrentTemplatePreset(settings);
+        const templates = Array.isArray(currentPreset?.templates) ? currentPreset.templates : [];
+        const selectedTemplateIdSet = new Set(currentPreset?.selectedTemplateIds || []);
+        syncTemplatePresetUi();
 
         if (templates.length === 0) {
             $list.html(`
                 <div class="my-topbar-test-template-empty">
-                    当前没有模板按钮。
+                    当前预设里还没有模板。
                 </div>
             `);
             return;
         }
 
-        const html = templates.map((item, index) => {
+        const html = templates.map(item => {
             const templateId = escapeHtml(item.id);
             const label = escapeHtml(item.label);
-            const isFirst = index === 0;
-            const isLast = index === templates.length - 1;
             const isSelected = selectedTemplateIdSet.has(item.id);
 
             return `
                 <div class="my-topbar-test-template-item${isSelected ? ' is-selected' : ''}" data-template-id="${templateId}">
-                    <div class="my-topbar-test-template-move">
-                        <button type="button"
-                                class="menu_button my-topbar-test-template-move-button"
-                                data-direction="up"
-                                data-template-id="${templateId}"
-                                title="上移"
-                                ${isFirst ? 'disabled' : ''}>
-                            ↑
-                        </button>
-                        <button type="button"
-                                class="menu_button my-topbar-test-template-move-button"
-                                data-direction="down"
-                                data-template-id="${templateId}"
-                                title="下移"
-                                ${isLast ? 'disabled' : ''}>
-                            ↓
-                        </button>
-                    </div>
-
                     <div class="my-topbar-test-template-main">
                         <div class="my-topbar-test-template-combo">
                             <button type="button"
                                     class="menu_button my-topbar-test-template-apply${isSelected ? ' is-selected' : ''}"
                                     data-template-id="${templateId}"
-                                    title="点击切换选定状态"
+                                    title="点击切换选定状态，长按拖拽排序"
+                                    aria-label="模板：${label}；点击切换选定状态，长按拖拽排序"
                                     aria-pressed="${isSelected ? 'true' : 'false'}">
                                 ${label}
                             </button>
 
-                            <button type="button"
-                                    class="menu_button my-topbar-test-template-edit-button"
-                                    data-template-id="${templateId}"
-                                    title="编辑模板内容"
-                                    aria-label="编辑模板内容：${label}">
-                                编辑
-                            </button>
+                            <div class="my-topbar-test-template-item-actions">
+                                <button type="button"
+                                        class="menu_button my-topbar-test-template-icon-button my-topbar-test-template-edit-button"
+                                        data-template-id="${templateId}"
+                                        title="编辑模板"
+                                        aria-label="编辑模板：${label}">
+                                    <i class="fa-solid fa-pen"></i>
+                                </button>
+                                <button type="button"
+                                        class="menu_button my-topbar-test-template-icon-button my-topbar-test-template-delete-button"
+                                        data-template-id="${templateId}"
+                                        title="删除模板"
+                                        aria-label="删除模板：${label}">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2408,7 +3130,7 @@
                         <button id="my-topbar-test-template-toggle"
                                 class="menu_button my-topbar-test-menu-btn"
                                 type="button">
-                            <i class="fa-solid fa-layer-group"></i> 提示词模板
+                            <i class="fa-solid fa-layer-group"></i> 模板预设
                         </button>
 
                         <button id="my-topbar-test-capture-send-toggle"
@@ -2493,30 +3215,69 @@
                         <div id="my-topbar-test-template-settings" class="my-topbar-test-settings-section" style="display: none;">
                             <div id="my-topbar-test-template-browse-view" class="my-topbar-test-template-browse-view">
                                 <div class="my-topbar-test-template-tip">
-                                    点击模板切换选定状态，点击编辑修改按钮名称和模板内容，上下箭头可调整顺序。
+                                    点击模板切换选定状态，点击右侧图标编辑或删除模板，长按模板按钮可拖拽调整顺序。
                                 </div>
 
-                                <div class="my-topbar-test-template-tools">
-                                    <button id="my-topbar-test-template-delete-selected"
-                                            class="menu_button my-topbar-test-template-tool-button"
-                                            type="button">
-                                        删除选定
-                                    </button>
-                                    <button id="my-topbar-test-template-add"
-                                            class="menu_button my-topbar-test-template-tool-button"
-                                            type="button">
-                                        添加模板
-                                    </button>
-                                    <button id="my-topbar-test-template-export"
-                                            class="menu_button my-topbar-test-template-tool-button"
-                                            type="button">
-                                        导出
-                                    </button>
-                                    <button id="my-topbar-test-template-import"
-                                            class="menu_button my-topbar-test-template-tool-button"
-                                            type="button">
-                                        导入
-                                    </button>
+                                <div class="my-topbar-test-template-toolbar">
+                                    <div class="my-topbar-test-template-preset-bar">
+                                        <div class="my-topbar-test-template-preset-drawer">
+                                            <button id="my-topbar-test-template-preset-current"
+                                                    class="menu_button my-topbar-test-template-preset-current"
+                                                    type="button"
+                                                    aria-expanded="false">
+                                                <span class="my-topbar-test-template-preset-current-name">默认预设</span>
+                                                <i class="fa-solid fa-chevron-down"></i>
+                                            </button>
+                                            <div id="my-topbar-test-template-preset-options"
+                                                 class="my-topbar-test-template-preset-options"
+                                                 style="display: none;"></div>
+                                        </div>
+
+                                        <div class="my-topbar-test-template-preset-actions">
+                                            <button id="my-topbar-test-template-delete-preset"
+                                                    class="menu_button my-topbar-test-template-icon-button"
+                                                    type="button"
+                                                    title="删除预设"
+                                                    data-long-press-tip="删除预设"
+                                                    aria-label="删除预设">
+                                                <i class="fa-solid fa-trash"></i>
+                                            </button>
+                                            <button id="my-topbar-test-template-add-preset"
+                                                    class="menu_button my-topbar-test-template-icon-button"
+                                                    type="button"
+                                                    title="新增预设"
+                                                    data-long-press-tip="新增预设"
+                                                    aria-label="新增预设">
+                                                <i class="fa-solid fa-file-circle-plus"></i>
+                                            </button>
+                                            <button id="my-topbar-test-template-rename-preset"
+                                                    class="menu_button my-topbar-test-template-icon-button"
+                                                    type="button"
+                                                    title="重命名预设"
+                                                    data-long-press-tip="重命名预设"
+                                                    aria-label="重命名预设">
+                                                <i class="fa-solid fa-pen"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="my-topbar-test-template-tools">
+                                        <button id="my-topbar-test-template-add"
+                                                class="menu_button my-topbar-test-template-tool-button"
+                                                type="button">
+                                            添加模板
+                                        </button>
+                                        <button id="my-topbar-test-template-export"
+                                                class="menu_button my-topbar-test-template-tool-button"
+                                                type="button">
+                                            导出
+                                        </button>
+                                        <button id="my-topbar-test-template-import"
+                                                class="menu_button my-topbar-test-template-tool-button"
+                                                type="button">
+                                            导入
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div id="my-topbar-test-template-list" class="my-topbar-test-template-list"></div>
@@ -2524,12 +3285,12 @@
 
                             <div id="my-topbar-test-template-editor-view" class="my-topbar-test-template-editor-view" style="display: none;">
                                 <div id="my-topbar-test-template-editor-title" class="my-topbar-test-template-editor-title">编辑模板</div>
-                                <label for="my-topbar-test-template-editor-label" class="my-topbar-test-label">按钮名称</label>
+                                <label for="my-topbar-test-template-editor-label" class="my-topbar-test-label">模板名称</label>
                                 <input id="my-topbar-test-template-editor-label"
                                        class="text_pole my-topbar-test-template-editor-input"
                                        type="text"
                                        spellcheck="false"
-                                       placeholder="请输入按钮名称"
+                                       placeholder="请输入模板名称"
                                        autocomplete="off">
                                 <label for="my-topbar-test-template-editor-text" class="my-topbar-test-label">模板内容</label>
                                 <textarea id="my-topbar-test-template-editor-text"
@@ -3036,11 +3797,67 @@
             });
 
         $(document)
-            .off('click.myTopbarTestTemplateDeleteSelected', SELECTORS.templateDeleteSelectedButton)
-            .on('click.myTopbarTestTemplateDeleteSelected', SELECTORS.templateDeleteSelectedButton, async function (e) {
+            .off('click.myTopbarTestTemplatePresetOutside')
+            .on('click.myTopbarTestTemplatePresetOutside', function (e) {
+                if (!templatePresetDrawerOpen) {
+                    return;
+                }
+
+                if ($(e.target).closest('.my-topbar-test-template-preset-bar').length) {
+                    return;
+                }
+
+                closeTemplatePresetDrawer();
+            });
+
+        $(document)
+            .off('click.myTopbarTestTemplatePresetCurrent', SELECTORS.templatePresetCurrentButton)
+            .on('click.myTopbarTestTemplatePresetCurrent', SELECTORS.templatePresetCurrentButton, function (e) {
                 e.preventDefault();
                 e.stopPropagation();
-                await handleDeleteSelectedTemplates();
+                toggleTemplatePresetDrawer();
+            });
+
+        $(document)
+            .off('click.myTopbarTestTemplatePresetOption', SELECTORS.templatePresetOptionButton)
+            .on('click.myTopbarTestTemplatePresetOption', SELECTORS.templatePresetOptionButton, async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const presetId = String($(this).attr('data-preset-id') ?? '');
+                await switchTemplatePreset(presetId);
+            });
+
+        $(document)
+            .off('click.myTopbarTestTemplateDeletePreset', SELECTORS.templateDeletePresetButton)
+            .on('click.myTopbarTestTemplateDeletePreset', SELECTORS.templateDeletePresetButton, async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (consumeMobileLongPressClickSuppression()) {
+                    return;
+                }
+                await deleteCurrentTemplatePreset();
+            });
+
+        $(document)
+            .off('click.myTopbarTestTemplateAddPreset', SELECTORS.templateAddPresetButton)
+            .on('click.myTopbarTestTemplateAddPreset', SELECTORS.templateAddPresetButton, async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (consumeMobileLongPressClickSuppression()) {
+                    return;
+                }
+                await addTemplatePreset();
+            });
+
+        $(document)
+            .off('click.myTopbarTestTemplateRenamePreset', SELECTORS.templateRenamePresetButton)
+            .on('click.myTopbarTestTemplateRenamePreset', SELECTORS.templateRenamePresetButton, async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (consumeMobileLongPressClickSuppression()) {
+                    return;
+                }
+                await renameCurrentTemplatePreset();
             });
 
         $(document)
@@ -3053,10 +3870,10 @@
 
         $(document)
             .off('click.myTopbarTestTemplateExport', SELECTORS.templateExportButton)
-            .on('click.myTopbarTestTemplateExport', SELECTORS.templateExportButton, function (e) {
+            .on('click.myTopbarTestTemplateExport', SELECTORS.templateExportButton, async function (e) {
                 e.preventDefault();
                 e.stopPropagation();
-                exportSelectedTemplates();
+                await exportTemplateData();
             });
 
         $(document)
@@ -3085,6 +3902,16 @@
             });
 
         $(document)
+            .off('click.myTopbarTestTemplateDelete', SELECTORS.templateDeleteButton)
+            .on('click.myTopbarTestTemplateDelete', SELECTORS.templateDeleteButton, async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const templateId = String($(this).attr('data-template-id') ?? '');
+                await deleteTemplateById(templateId);
+            });
+
+        $(document)
             .off('click.myTopbarTestTemplateEditorSave', SELECTORS.templateEditorSaveButton)
             .on('click.myTopbarTestTemplateEditorSave', SELECTORS.templateEditorSaveButton, function (e) {
                 e.preventDefault();
@@ -3101,20 +3928,86 @@
             });
 
         $(document)
-            .off('click.myTopbarTestTemplateMove', SELECTORS.templateMoveButton)
-            .on('click.myTopbarTestTemplateMove', SELECTORS.templateMoveButton, function (e) {
-                e.preventDefault();
-                e.stopPropagation();
+            .off('pointerdown.myTopbarTestTemplateDrag', SELECTORS.templateApplyButton)
+            .on('pointerdown.myTopbarTestTemplateDrag', SELECTORS.templateApplyButton, function (e) {
+                const originalEvent = e.originalEvent || e;
+                if (originalEvent.pointerType === 'mouse' && originalEvent.button !== 0) {
+                    return;
+                }
 
                 const templateId = String($(this).attr('data-template-id') ?? '');
-                const direction = String($(this).attr('data-direction') ?? '');
+                beginTemplateSortPress(templateId, originalEvent.pointerId, originalEvent.clientX, originalEvent.clientY);
+            });
 
-                moveTemplate(templateId, direction);
+        $(document)
+            .off('pointerdown.myTopbarTestTemplateLongPressTip', '.my-topbar-test-template-icon-button[data-long-press-tip]')
+            .on('pointerdown.myTopbarTestTemplateLongPressTip', '.my-topbar-test-template-icon-button[data-long-press-tip]', function (e) {
+                if (!isMobileLayout()) {
+                    return;
+                }
+
+                const originalEvent = e.originalEvent || e;
+                if (originalEvent.pointerType === 'mouse' && originalEvent.button !== 0) {
+                    return;
+                }
+
+                const tip = String($(this).attr('data-long-press-tip') ?? '').trim();
+                if (!tip) {
+                    return;
+                }
+
+                beginMobileLongPressTip(originalEvent.pointerId, originalEvent.clientX, originalEvent.clientY, this, tip);
+            });
+
+        $(document)
+            .off('pointermove.myTopbarTestTemplateInteractions')
+            .on('pointermove.myTopbarTestTemplateInteractions', function (e) {
+                const originalEvent = e.originalEvent || e;
+
+                if (templateSortState.pointerId !== null && originalEvent.pointerId === templateSortState.pointerId) {
+                    const movedX = Math.abs(originalEvent.clientX - templateSortState.startX);
+                    const movedY = Math.abs(originalEvent.clientY - templateSortState.startY);
+                    if (!templateSortState.isDragging && (movedX > 8 || movedY > 8)) {
+                        resetTemplateSortState();
+                    } else if (templateSortState.isDragging) {
+                        e.preventDefault();
+                        updateDraggedTemplatePosition(originalEvent.clientX, originalEvent.clientY);
+                        maybeMoveDraggedTemplate(originalEvent.clientX, originalEvent.clientY);
+                    }
+                }
+
+                if (mobileLongPressState.pointerId !== null && originalEvent.pointerId === mobileLongPressState.pointerId) {
+                    const movedX = Math.abs(originalEvent.clientX - mobileLongPressState.startX);
+                    const movedY = Math.abs(originalEvent.clientY - mobileLongPressState.startY);
+                    if (movedX > 8 || movedY > 8) {
+                        resetMobileLongPressState();
+                    }
+                }
+            });
+
+        $(document)
+            .off('pointerup.myTopbarTestTemplateInteractions pointercancel.myTopbarTestTemplateInteractions')
+            .on('pointerup.myTopbarTestTemplateInteractions pointercancel.myTopbarTestTemplateInteractions', function (e) {
+                const originalEvent = e.originalEvent || e;
+
+                if (templateSortState.pointerId !== null && originalEvent.pointerId === templateSortState.pointerId) {
+                    finalizeTemplateSort();
+                }
+
+                if (mobileLongPressState.pointerId !== null && originalEvent.pointerId === mobileLongPressState.pointerId) {
+                    resetMobileLongPressState();
+                }
             });
 
         $(document)
             .off('click.myTopbarTestTemplateApply', SELECTORS.templateApplyButton)
             .on('click.myTopbarTestTemplateApply', SELECTORS.templateApplyButton, function (e) {
+                if (consumeTemplateSortClickSuppression()) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+
                 const templateId = String($(this).attr('data-template-id') ?? '');
                 toggleTemplateSelection(templateId);
             });

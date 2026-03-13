@@ -252,10 +252,74 @@
     margin-top: 5px;
 }
 
+.my-topbar-test-template-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.my-topbar-test-template-preset-bar {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.my-topbar-test-template-preset-drawer {
+    flex: 1 1 240px;
+    min-width: 0;
+}
+
+.my-topbar-test-template-preset-current,
+.my-topbar-test-template-preset-option {
+    width: 100%;
+    margin: 0;
+    text-align: left;
+}
+
+.my-topbar-test-template-preset-current {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.my-topbar-test-template-preset-current-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.my-topbar-test-template-preset-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.my-topbar-test-template-preset-empty {
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    opacity: 0.78;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+}
+
+.my-topbar-test-template-preset-actions,
 .my-topbar-test-template-tools {
     display: flex;
     gap: 10px;
     flex-wrap: wrap;
+}
+
+.my-topbar-test-template-preset-actions {
+    flex: 0 0 auto;
+}
+
+.my-topbar-test-template-tools {
     justify-content: flex-end;
 }
 
@@ -294,6 +358,17 @@
     font-size: 12px;
 }
 
+.my-topbar-test-template-icon-button {
+    width: 40px;
+    min-height: 40px;
+    margin: 0;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+}
+
 .my-topbar-test-template-list {
     display: flex;
     flex-direction: column;
@@ -306,6 +381,17 @@
     display: flex;
     align-items: stretch;
     gap: 10px;
+    position: relative;
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms ease, box-shadow 180ms ease;
+}
+
+.my-topbar-test-template-item.is-dragging {
+    opacity: 0.98;
+    z-index: 8;
+    pointer-events: none;
+    transform: translate3d(var(--my-topbar-test-drag-x, 0), var(--my-topbar-test-drag-y, 0), 0) scale(1.03);
+    transform-origin: var(--my-topbar-test-drag-origin-x, 50%) var(--my-topbar-test-drag-origin-y, 50%);
+    box-shadow: 0 18px 34px rgba(0, 0, 0, 0.28);
 }
 
 .my-topbar-test-template-main {
@@ -321,39 +407,13 @@
     min-width: 0;
 }
 
-.my-topbar-test-template-move {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    flex: 0 0 40px;
-}
-
-.my-topbar-test-template-move-button {
-    min-height: 30px;
-    margin: 0;
-    padding: 0;
-    font-size: 14px;
-}
-
-.my-topbar-test-template-edit-button {
+.my-topbar-test-template-item-actions {
     position: absolute;
     top: 8px;
     right: 8px;
     z-index: 1;
-    width: auto;
-    min-width: 56px;
-    min-height: 30px;
-    margin: 0;
-    padding: 0 12px;
-    font-size: 12px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.my-topbar-test-template-move-button[disabled] {
-    opacity: 0.3;
-    cursor: not-allowed;
+    display: flex;
+    gap: 6px;
 }
 
 .my-topbar-test-template-apply {
@@ -361,17 +421,28 @@
     width: 100%;
     margin: 0;
     text-align: left;
-    padding: 0 82px 0 15px;
+    padding: 0 108px 0 15px;
     min-height: 64px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     user-select: none;
+    touch-action: none;
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease, background 180ms ease;
 }
 
 .my-topbar-test-template-apply.is-selected {
     border-color: var(--SmartThemeBorderColor, rgba(115, 230, 182, 0.75));
     background: rgba(115, 230, 182, 0.16);
+}
+
+.my-topbar-test-template-item.is-dragging .my-topbar-test-template-apply {
+    transform: scale(1.01);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+}
+
+body.my-topbar-test-template-dragging .my-topbar-test-template-apply {
+    cursor: grabbing;
 }
 
 .my-topbar-test-template-editor-title {
@@ -413,6 +484,76 @@
     opacity: 0.8;
     background: rgba(255, 255, 255, 0.04);
     border: 1px dashed rgba(255, 255, 255, 0.12);
+}
+
+.my-topbar-test-action-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+}
+
+.my-topbar-test-action-dialog-card {
+    width: min(420px, calc(100% - 32px));
+    padding: 20px;
+    border-radius: 12px;
+    background: var(--SmartThemeBlurTintColor, rgba(30, 30, 30, 0.98));
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.12));
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.my-topbar-test-action-dialog-title {
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.my-topbar-test-action-dialog-message {
+    font-size: 13px;
+    line-height: 1.6;
+    opacity: 0.86;
+    white-space: pre-wrap;
+}
+
+.my-topbar-test-action-dialog-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.my-topbar-test-action-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.my-topbar-test-action-dialog-button.is-primary {
+    border-color: var(--SmartThemeBorderColor, rgba(115, 230, 182, 0.75));
+    background: rgba(115, 230, 182, 0.16);
+}
+
+.my-topbar-test-mobile-longpress-tip {
+    position: absolute;
+    z-index: 10002;
+    max-width: min(240px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--SmartThemeBodyColor, #fff);
+    background: rgba(0, 0, 0, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+    pointer-events: none;
+    white-space: nowrap;
 }
 
 .my-topbar-test-api-grid {
@@ -600,6 +741,20 @@
 
     .my-topbar-test-api-grid {
         grid-template-columns: 1fr;
+    }
+
+    .my-topbar-test-template-preset-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .my-topbar-test-template-preset-actions,
+    .my-topbar-test-template-tools {
+        justify-content: flex-end;
+    }
+
+    .my-topbar-test-template-apply {
+        padding-right: 104px;
     }
 
     .my-topbar-test-api-stop-field {
