@@ -1,8 +1,56 @@
 (() => {
     const MODULE_NAME = 'my_topbar_test';
     const EXTENSION_NAME = 'my-topbar-test';
-    const EXTENSION_PATH = `/scripts/extensions/third-party/${EXTENSION_NAME}`;
+    const EXTENSION_PATH = resolveExtensionPath();
     const GLOBAL_FLAG = '__myTopbarTestLoaded__';
+
+    function extractExtensionPathFromScriptSrc(scriptSrc) {
+        try {
+            const parsed = new URL(String(scriptSrc ?? ''), window.location.href);
+            const pathname = String(parsed.pathname ?? '');
+            const match = pathname.match(/(\/scripts\/extensions\/third-party\/[^/]+)\/index\.js$/);
+            return match?.[1] || '';
+        } catch (error) {
+            return '';
+        }
+    }
+
+    function resolveExtensionPath() {
+        const fallbackPath = `/scripts/extensions/third-party/${EXTENSION_NAME}`;
+        const candidateScriptSrcList = [];
+
+        try {
+            const currentScriptSrc = typeof document?.currentScript?.src === 'string'
+                ? document.currentScript.src
+                : '';
+            if (currentScriptSrc) {
+                candidateScriptSrcList.push(currentScriptSrc);
+            }
+
+            const scriptNodes = typeof document?.querySelectorAll === 'function'
+                ? document.querySelectorAll('script[src*="/scripts/extensions/third-party/"]')
+                : [];
+
+            for (const node of scriptNodes) {
+                const nodeSrc = typeof node?.src === 'string' ? node.src : '';
+                if (nodeSrc) {
+                    candidateScriptSrcList.push(nodeSrc);
+                }
+            }
+        } catch (error) {
+            console.warn(`[${MODULE_NAME}] 解析扩展路径失败，使用默认路径。`, error);
+            return fallbackPath;
+        }
+
+        for (const src of candidateScriptSrcList) {
+            const resolvedPath = extractExtensionPathFromScriptSrc(src);
+            if (resolvedPath) {
+                return resolvedPath;
+            }
+        }
+
+        return fallbackPath;
+    }
 
     const DEFAULT_TEXT = '琳喵喵很高兴为您服务';
     const EMPTY_CHAT_TEXT = '当前聊天里还没有可读取的消息。';
@@ -25,6 +73,24 @@
             content: '请提取下面内容的核心要点，并用分点方式输出：\n\n{{text}}',
         }),
     ]);
+    const FLOATING_WINDOW_IMAGE_PATH = encodeURI(`${EXTENSION_PATH}/zhaopan/linmm.webp`);
+    const FLOATING_LONG_PRESS_DELAY = 320;
+    const FLOATING_DOUBLE_CLICK_DELAY = 260;
+    const FLOATING_DRAG_THRESHOLD = 12;
+    const FLOATING_ACTION_OPTIONS = Object.freeze([
+        Object.freeze({ value: 'open_range', label: '打开设置范围' }),
+        Object.freeze({ value: 'open_template', label: '打开模板预设' }),
+        Object.freeze({ value: 'open_capture_send', label: '打开截取与发送' }),
+        Object.freeze({ value: 'open_api', label: '打开api链接' }),
+        Object.freeze({ value: 'open_auto_trigger', label: '打开自动触发' }),
+        Object.freeze({ value: 'open_floating_settings', label: '打开悬浮窗设置' }),
+        Object.freeze({ value: 'run_manual_trigger', label: '运行手动触发' }),
+        Object.freeze({ value: 'run_manual_send', label: '运行手动发送' }),
+        Object.freeze({ value: 'toggle_auto_trigger', label: '开关自动触发' }),
+        Object.freeze({ value: 'run_stop_flow', label: '运行停止流程' }),
+        Object.freeze({ value: 'open_output', label: '打开截取与输出框' }),
+    ]);
+    const FLOATING_ACTION_VALUE_SET = new Set(FLOATING_ACTION_OPTIONS.map(item => item.value));
 
     const DEFAULT_SETTINGS = Object.freeze({
         keepTags: false,
@@ -33,6 +99,20 @@
         endTag: '',
         templatePresets: Object.freeze([]),
         currentTemplatePresetId: '',
+        floatingWindow: Object.freeze({
+            enabled: false,
+            clickAction: '',
+            longPressAction: '',
+            doubleClickAction: '',
+            size: Object.freeze({
+                length: null,
+                width: null,
+            }),
+            position: Object.freeze({
+                left: null,
+                top: null,
+            }),
+        }),
         apiConfig: Object.freeze({
             temperature: '1',
             topP: '',
@@ -79,8 +159,15 @@
         apiSettings: '#my-topbar-test-api-settings',
         autoTriggerToggleButton: '#my-topbar-test-auto-trigger-toggle',
         autoTriggerSettings: '#my-topbar-test-auto-trigger-settings',
+        floatingToggleButton: '#my-topbar-test-floating-toggle',
+        floatingSettings: '#my-topbar-test-floating-settings',
         autoTriggerEnabledCheckbox: '#my-topbar-test-auto-trigger-enabled',
-        autoTriggerStopButton: '#my-topbar-test-auto-trigger-stop',
+        floatingEnabledCheckbox: '#my-topbar-test-floating-enabled',
+        floatingClickActionSelect: '#my-topbar-test-floating-click-action',
+        floatingLongPressActionSelect: '#my-topbar-test-floating-long-press-action',
+        floatingDoubleClickActionSelect: '#my-topbar-test-floating-double-click-action',
+        floatingSizeLengthInput: '#my-topbar-test-floating-size-length',
+        floatingSizeWidthInput: '#my-topbar-test-floating-size-width',
         keepTagsCheckbox: '#my-topbar-test-keep-tags',
         onlyReplaceInTagsCheckbox: '#my-topbar-test-only-replace-in-tags',
         startTagInput: '#my-topbar-test-start-tag',
@@ -145,6 +232,9 @@
         replyModalConfirmButton: '#my-topbar-test-reply-modal-confirm',
         replyModalCloseButton: '#my-topbar-test-reply-modal-close',
 
+        floatingWindow: '#my-topbar-test-floating-window',
+        floatingWindowImage: '#my-topbar-test-floating-image',
+
         templateApplyButton: '.my-topbar-test-template-apply',
         menuBtns: '.my-topbar-test-menu-btn' // 新增菜单按钮统称
     });
@@ -198,6 +288,20 @@
         startY: 0,
         shown: false,
         suppressClick: false,
+    };
+    let floatingWindowState = {
+        pressTimerId: 0,
+        singleClickTimerId: 0,
+        pointerId: null,
+        startX: 0,
+        startY: 0,
+        startLeft: 0,
+        startTop: 0,
+        isDragging: false,
+        longPressReady: false,
+        lastTapTime: 0,
+        lastTapPointerType: '',
+        captureElement: null,
     };
 
     function log(...args) {
@@ -263,8 +367,24 @@
             endTag: DEFAULT_SETTINGS.endTag,
             templatePresets: [preset],
             currentTemplatePresetId: preset.id,
+            floatingWindow: deepClone(DEFAULT_SETTINGS.floatingWindow),
             apiConfig: deepClone(DEFAULT_SETTINGS.apiConfig),
         };
+    }
+
+    function normalizeFloatingActionValue(value) {
+        const normalized = String(value ?? '').trim();
+        return FLOATING_ACTION_VALUE_SET.has(normalized) ? normalized : '';
+    }
+
+    function normalizeFloatingWindowSizeValue(value) {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed)) {
+            return null;
+        }
+
+        const rounded = Math.round(parsed);
+        return rounded > 0 ? rounded : null;
     }
 
     function normalizeTemplateItem(item, index = 0) {
@@ -324,6 +444,33 @@
         }
 
         return rawPresets.map((item, index) => normalizePresetItem(item, index));
+    }
+
+    function normalizeFloatingWindowConfig(rawFloatingWindowConfig) {
+        const source = rawFloatingWindowConfig && typeof rawFloatingWindowConfig === 'object' && !Array.isArray(rawFloatingWindowConfig)
+            ? rawFloatingWindowConfig
+            : {};
+        const rawSize = source.size && typeof source.size === 'object' && !Array.isArray(source.size)
+            ? source.size
+            : {};
+        const rawPosition = source.position && typeof source.position === 'object' && !Array.isArray(source.position)
+            ? source.position
+            : {};
+
+        return {
+            enabled: Boolean(source.enabled),
+            clickAction: normalizeFloatingActionValue(source.clickAction),
+            longPressAction: normalizeFloatingActionValue(source.longPressAction),
+            doubleClickAction: normalizeFloatingActionValue(source.doubleClickAction),
+            size: {
+                length: normalizeFloatingWindowSizeValue(rawSize.length),
+                width: normalizeFloatingWindowSizeValue(rawSize.width),
+            },
+            position: {
+                left: Number.isFinite(rawPosition.left) ? rawPosition.left : null,
+                top: Number.isFinite(rawPosition.top) ? rawPosition.top : null,
+            },
+        };
     }
 
     function normalizeApiConfig(rawApiConfig) {
@@ -400,6 +547,7 @@
 
         delete settings.templates;
         delete settings.selectedTemplateIds;
+        settings.floatingWindow = normalizeFloatingWindowConfig(settings.floatingWindow);
         settings.apiConfig = normalizeApiConfig(settings.apiConfig);
 
         return settings;
@@ -535,6 +683,264 @@
             && String(replyModalState.source ?? '') === 'auto';
 
         return autoTriggerState.isBusy || Boolean(autoTriggerState.pendingTimerId) || isAutoConfirmVisible;
+    }
+
+    function getFloatingWindowConfig() {
+        return loadSettings().floatingWindow;
+    }
+
+    function renderFloatingActionSelectOptions() {
+        const optionsHtml = [
+            '<option value="">未设置</option>',
+            ...FLOATING_ACTION_OPTIONS.map(item => `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`),
+        ].join('');
+
+        [
+            SELECTORS.floatingClickActionSelect,
+            SELECTORS.floatingLongPressActionSelect,
+            SELECTORS.floatingDoubleClickActionSelect,
+        ].forEach(selector => {
+            const $select = $(selector);
+            if ($select.length && $select.html() !== optionsHtml) {
+                $select.html(optionsHtml);
+            }
+        });
+    }
+
+    function getDefaultFloatingWindowSize() {
+        const fallback = isMobileLayout() ? 72 : 88;
+
+        return {
+            length: fallback,
+            width: fallback,
+        };
+    }
+
+    function getResolvedFloatingWindowSize() {
+        const floatingWindowConfig = getFloatingWindowConfig();
+        const defaultSize = getDefaultFloatingWindowSize();
+
+        return {
+            length: normalizeFloatingWindowSizeValue(floatingWindowConfig.size?.length) ?? defaultSize.length,
+            width: normalizeFloatingWindowSizeValue(floatingWindowConfig.size?.width) ?? defaultSize.width,
+        };
+    }
+
+    function syncFloatingWindowSettingsUi() {
+        const floatingWindowConfig = getFloatingWindowConfig();
+        const defaultSize = getDefaultFloatingWindowSize();
+
+        renderFloatingActionSelectOptions();
+        $(SELECTORS.floatingEnabledCheckbox).prop('checked', floatingWindowConfig.enabled);
+        $(SELECTORS.floatingClickActionSelect).val(floatingWindowConfig.clickAction);
+        $(SELECTORS.floatingLongPressActionSelect).val(floatingWindowConfig.longPressAction);
+        $(SELECTORS.floatingDoubleClickActionSelect).val(floatingWindowConfig.doubleClickAction);
+
+        $(SELECTORS.floatingSizeLengthInput)
+            .val(Number.isFinite(floatingWindowConfig.size?.length) ? String(floatingWindowConfig.size.length) : '')
+            .attr('placeholder', String(defaultSize.length));
+
+        $(SELECTORS.floatingSizeWidthInput)
+            .val(Number.isFinite(floatingWindowConfig.size?.width) ? String(floatingWindowConfig.size.width) : '')
+            .attr('placeholder', String(defaultSize.width));
+    }
+
+    function updateFloatingWindowConfigField(key, value) {
+        const settings = loadSettings();
+        settings.floatingWindow[key] = value;
+        savePluginSettings();
+    }
+
+    function updateFloatingWindowPosition(left, top) {
+        const settings = loadSettings();
+        settings.floatingWindow.position = {
+            left,
+            top,
+        };
+        savePluginSettings();
+    }
+
+    function updateFloatingWindowSize(sizeKey, value) {
+        const settings = loadSettings();
+        settings.floatingWindow.size[sizeKey] = value;
+        savePluginSettings();
+    }
+
+    function handleFloatingWindowSizeInputChanged(selector, sizeKey) {
+        const rawValue = String($(selector).val() ?? '').trim();
+        if (rawValue === '') {
+            updateFloatingWindowSize(sizeKey, null);
+            syncFloatingWindowSettingsUi();
+            syncFloatingWindowUi();
+            return;
+        }
+
+        const normalized = normalizeFloatingWindowSizeValue(rawValue);
+        if (normalized === null) {
+            showMessage('warning', '悬浮窗尺寸请输入大于 0 的数字，留空则使用默认值。');
+            syncFloatingWindowSettingsUi();
+            return;
+        }
+
+        updateFloatingWindowSize(sizeKey, normalized);
+        syncFloatingWindowSettingsUi();
+        syncFloatingWindowUi();
+    }
+
+    function clearFloatingWindowSingleClickTimer() {
+        if (floatingWindowState.singleClickTimerId) {
+            window.clearTimeout(floatingWindowState.singleClickTimerId);
+            floatingWindowState.singleClickTimerId = 0;
+        }
+    }
+
+    function clearFloatingWindowPressTimer() {
+        if (floatingWindowState.pressTimerId) {
+            window.clearTimeout(floatingWindowState.pressTimerId);
+            floatingWindowState.pressTimerId = 0;
+        }
+    }
+
+    function releaseFloatingWindowPointerCapture() {
+        if (
+            floatingWindowState.captureElement
+            && floatingWindowState.pointerId !== null
+            && typeof floatingWindowState.captureElement.releasePointerCapture === 'function'
+        ) {
+            try {
+                if (
+                    typeof floatingWindowState.captureElement.hasPointerCapture !== 'function'
+                    || floatingWindowState.captureElement.hasPointerCapture(floatingWindowState.pointerId)
+                ) {
+                    floatingWindowState.captureElement.releasePointerCapture(floatingWindowState.pointerId);
+                }
+            } catch (error) {
+                console.warn(`[${MODULE_NAME}] 释放悬浮窗指针捕获失败`, error);
+            }
+        }
+    }
+
+    function resetFloatingWindowInteractionState() {
+        clearFloatingWindowPressTimer();
+        releaseFloatingWindowPointerCapture();
+
+        floatingWindowState.pointerId = null;
+        floatingWindowState.startX = 0;
+        floatingWindowState.startY = 0;
+        floatingWindowState.startLeft = 0;
+        floatingWindowState.startTop = 0;
+        floatingWindowState.isDragging = false;
+        floatingWindowState.longPressReady = false;
+        floatingWindowState.captureElement = null;
+
+        $(SELECTORS.floatingWindow).removeClass('is-dragging');
+    }
+
+    function clampNumber(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+    }
+
+    function getFloatingWindowMargin() {
+        return isMobileLayout() ? 12 : 16;
+    }
+
+    function getFloatingWindowSize() {
+        const resolvedSize = getResolvedFloatingWindowSize();
+
+        return {
+            width: resolvedSize.width,
+            height: resolvedSize.length,
+        };
+    }
+
+    function getDefaultFloatingWindowPosition() {
+        const { width, height } = getFloatingWindowSize();
+        const margin = getFloatingWindowMargin();
+        const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+        const maxTop = Math.max(margin, window.innerHeight - height - margin);
+        const preferredTop = window.innerHeight - height - (isMobileLayout() ? 120 : 24);
+
+        return {
+            left: maxLeft,
+            top: clampNumber(preferredTop, margin, maxTop),
+        };
+    }
+
+    function clampFloatingWindowPosition(left, top) {
+        const { width, height } = getFloatingWindowSize();
+        const margin = getFloatingWindowMargin();
+        const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+        const maxTop = Math.max(margin, window.innerHeight - height - margin);
+
+        return {
+            left: clampNumber(left, margin, maxLeft),
+            top: clampNumber(top, margin, maxTop),
+        };
+    }
+
+    function syncFloatingWindowUi() {
+        const floatingWindowConfig = getFloatingWindowConfig();
+        const $floatingWindow = $(SELECTORS.floatingWindow);
+        if (!$floatingWindow.length) {
+            return;
+        }
+
+        $(SELECTORS.floatingWindowImage).attr('src', FLOATING_WINDOW_IMAGE_PATH);
+
+        const resolvedSize = getResolvedFloatingWindowSize();
+        $floatingWindow.css({
+            width: `${resolvedSize.width}px`,
+            height: `${resolvedSize.length}px`,
+        });
+
+        if (!floatingWindowConfig.enabled) {
+            resetFloatingWindowInteractionState();
+            clearFloatingWindowSingleClickTimer();
+            floatingWindowState.lastTapTime = 0;
+            floatingWindowState.lastTapPointerType = '';
+            $floatingWindow.hide();
+            return;
+        }
+
+        $floatingWindow.show();
+
+        const hasSavedPosition = Number.isFinite(floatingWindowConfig.position.left) && Number.isFinite(floatingWindowConfig.position.top);
+        const nextPosition = hasSavedPosition
+            ? clampFloatingWindowPosition(floatingWindowConfig.position.left, floatingWindowConfig.position.top)
+            : getDefaultFloatingWindowPosition();
+
+        $floatingWindow.css({
+            left: `${nextPosition.left}px`,
+            top: `${nextPosition.top}px`,
+        });
+
+        if (
+            hasSavedPosition
+            && (nextPosition.left !== floatingWindowConfig.position.left || nextPosition.top !== floatingWindowConfig.position.top)
+        ) {
+            updateFloatingWindowPosition(nextPosition.left, nextPosition.top);
+        }
+    }
+
+    function mountFloatingWindow() {
+        if ($(SELECTORS.floatingWindow).length) {
+            return;
+        }
+
+        $('body').append(`
+            <div id="my-topbar-test-floating-window"
+                 class="my-topbar-test-floating-window"
+                 style="display: none;"
+                 role="button"
+                 tabindex="0"
+                 aria-label="悬浮窗">
+                <img id="my-topbar-test-floating-image"
+                     class="my-topbar-test-floating-image"
+                     src="${FLOATING_WINDOW_IMAGE_PATH}"
+                     alt=""
+                     draggable="false">
+            </div>
+        `);
     }
 
     function getApiConfig() {
@@ -1480,6 +1886,210 @@
         showMessage('success', '已停止流程');
     }
 
+    function stopFlow() {
+        if (isAutoFlowActive()) {
+            stopAutoFlow();
+            return;
+        }
+
+        stopManualFlow();
+    }
+
+    function handleFloatingWindowEnabledCheckboxChanged() {
+        updateFloatingWindowConfigField('enabled', $(SELECTORS.floatingEnabledCheckbox).is(':checked'));
+        syncFloatingWindowUi();
+    }
+
+    function handleFloatingWindowActionSelectChanged(selector, key) {
+        updateFloatingWindowConfigField(key, normalizeFloatingActionValue($(selector).val()));
+        syncFloatingWindowSettingsUi();
+    }
+
+    async function executeFloatingWindowAction(actionValue) {
+        const normalizedAction = normalizeFloatingActionValue(actionValue);
+        if (!normalizedAction) {
+            return;
+        }
+
+        switch (normalizedAction) {
+            case 'open_range':
+                openPanelDetail(switchTabToRange);
+                return;
+            case 'open_template':
+                openPanelDetail(switchTabToTemplate);
+                return;
+            case 'open_capture_send':
+                openPanelDetail(switchTabToCaptureSend);
+                return;
+            case 'open_api':
+                openPanelDetail(switchTabToApiSettings);
+                return;
+            case 'open_auto_trigger':
+                openPanelDetail(switchTabToAutoTrigger);
+                return;
+            case 'open_floating_settings':
+                openPanelDetail(switchTabToFloatingSettings);
+                return;
+            case 'run_manual_trigger':
+                await handleManualTrigger();
+                return;
+            case 'run_manual_send':
+                await handleManualSend();
+                return;
+            case 'toggle_auto_trigger':
+                setAutoTriggerEnabledForCurrentChat(!isAutoTriggerEnabledForCurrentChat());
+                syncAutoTriggerUiState();
+                return;
+            case 'run_stop_flow':
+                stopFlow();
+                return;
+            case 'open_output':
+                openPanelOutput();
+                return;
+            default:
+                return;
+        }
+    }
+
+    async function triggerFloatingWindowAction(actionKey) {
+        const floatingWindowConfig = getFloatingWindowConfig();
+        await executeFloatingWindowAction(floatingWindowConfig[actionKey]);
+    }
+
+    function handleFloatingWindowTap(pointerType = '') {
+        const normalizedPointerType = String(pointerType ?? '');
+        const now = Date.now();
+        const floatingWindowConfig = getFloatingWindowConfig();
+        const hasDoubleClickAction = Boolean(floatingWindowConfig.doubleClickAction);
+        const isDoubleTap = hasDoubleClickAction
+            && Boolean(floatingWindowState.lastTapTime)
+            && now - floatingWindowState.lastTapTime <= FLOATING_DOUBLE_CLICK_DELAY
+            && floatingWindowState.lastTapPointerType === normalizedPointerType;
+
+        if (isDoubleTap) {
+            clearFloatingWindowSingleClickTimer();
+            floatingWindowState.lastTapTime = 0;
+            floatingWindowState.lastTapPointerType = '';
+            void triggerFloatingWindowAction('doubleClickAction');
+            return;
+        }
+
+        if (floatingWindowState.singleClickTimerId && !hasDoubleClickAction) {
+            clearFloatingWindowSingleClickTimer();
+            void triggerFloatingWindowAction('clickAction');
+        }
+
+        floatingWindowState.lastTapTime = now;
+        floatingWindowState.lastTapPointerType = normalizedPointerType;
+        floatingWindowState.singleClickTimerId = window.setTimeout(() => {
+            floatingWindowState.singleClickTimerId = 0;
+            floatingWindowState.lastTapTime = 0;
+            floatingWindowState.lastTapPointerType = '';
+            void triggerFloatingWindowAction('clickAction');
+        }, FLOATING_DOUBLE_CLICK_DELAY);
+    }
+
+    function beginFloatingWindowPress(pointerId, clientX, clientY, captureElement = null) {
+        const $floatingWindow = $(SELECTORS.floatingWindow);
+        if (!$floatingWindow.length) {
+            return;
+        }
+
+        clearFloatingWindowPressTimer();
+        floatingWindowState.pointerId = pointerId;
+        floatingWindowState.startX = clientX;
+        floatingWindowState.startY = clientY;
+        floatingWindowState.startLeft = Number.parseFloat($floatingWindow.css('left')) || 0;
+        floatingWindowState.startTop = Number.parseFloat($floatingWindow.css('top')) || 0;
+        floatingWindowState.isDragging = false;
+        floatingWindowState.longPressReady = false;
+        floatingWindowState.captureElement = captureElement;
+        floatingWindowState.pressTimerId = window.setTimeout(() => {
+            floatingWindowState.pressTimerId = 0;
+            floatingWindowState.longPressReady = true;
+        }, FLOATING_LONG_PRESS_DELAY);
+    }
+
+    function handleFloatingWindowPointerMove(pointerId, clientX, clientY) {
+        if (floatingWindowState.pointerId === null || floatingWindowState.pointerId !== pointerId) {
+            return;
+        }
+
+        const movedX = clientX - floatingWindowState.startX;
+        const movedY = clientY - floatingWindowState.startY;
+        const exceededThreshold = Math.abs(movedX) > FLOATING_DRAG_THRESHOLD || Math.abs(movedY) > FLOATING_DRAG_THRESHOLD;
+
+        if (!floatingWindowState.longPressReady) {
+            if (exceededThreshold) {
+                resetFloatingWindowInteractionState();
+            }
+            return;
+        }
+
+        if (!floatingWindowState.isDragging && exceededThreshold) {
+            floatingWindowState.isDragging = true;
+            clearFloatingWindowSingleClickTimer();
+            $(SELECTORS.floatingWindow).addClass('is-dragging');
+
+            if (
+                floatingWindowState.captureElement
+                && floatingWindowState.pointerId !== null
+                && typeof floatingWindowState.captureElement.setPointerCapture === 'function'
+            ) {
+                try {
+                    floatingWindowState.captureElement.setPointerCapture(floatingWindowState.pointerId);
+                } catch (error) {
+                    console.warn(`[${MODULE_NAME}] 设置悬浮窗指针捕获失败`, error);
+                }
+            }
+        }
+
+        if (!floatingWindowState.isDragging) {
+            return;
+        }
+
+        const nextPosition = clampFloatingWindowPosition(
+            floatingWindowState.startLeft + movedX,
+            floatingWindowState.startTop + movedY,
+        );
+
+        $(SELECTORS.floatingWindow).css({
+            left: `${nextPosition.left}px`,
+            top: `${nextPosition.top}px`,
+        });
+    }
+
+    function finalizeFloatingWindowPress(pointerId, pointerType = '') {
+        if (floatingWindowState.pointerId === null || floatingWindowState.pointerId !== pointerId) {
+            return;
+        }
+
+        clearFloatingWindowPressTimer();
+        const wasDragging = floatingWindowState.isDragging;
+        const shouldRunLongPressAction = floatingWindowState.longPressReady && !floatingWindowState.isDragging;
+        const currentLeft = Number.parseFloat($(SELECTORS.floatingWindow).css('left')) || 0;
+        const currentTop = Number.parseFloat($(SELECTORS.floatingWindow).css('top')) || 0;
+
+        resetFloatingWindowInteractionState();
+
+        if (wasDragging) {
+            floatingWindowState.lastTapTime = 0;
+            floatingWindowState.lastTapPointerType = '';
+            updateFloatingWindowPosition(currentLeft, currentTop);
+            return;
+        }
+
+        if (shouldRunLongPressAction) {
+            clearFloatingWindowSingleClickTimer();
+            floatingWindowState.lastTapTime = 0;
+            floatingWindowState.lastTapPointerType = '';
+            void triggerFloatingWindowAction('longPressAction');
+            return;
+        }
+
+        handleFloatingWindowTap(pointerType);
+    }
+
     function handleAutoTriggerEnabledCheckboxChanged() {
         const checked = $(SELECTORS.autoTriggerEnabledCheckbox).is(':checked');
         setAutoTriggerEnabledForCurrentChat(checked);
@@ -1641,8 +2251,40 @@
         $panel.fadeToggle(200);
     }
 
+    function showPanel() {
+        const $panel = $(SELECTORS.panel);
+        if (!$panel.length || $panel.is(':visible')) {
+            return;
+        }
+
+        $panel.stop(true, true).fadeIn(200);
+    }
+
     function hidePanel() {
         $(SELECTORS.panel).fadeOut(200);
+    }
+
+    function openPanelDetail(switchTab) {
+        showPanel();
+        switchTab();
+
+        if (isMobileLayout()) {
+            setMobilePanelView('detail');
+        } else {
+            syncMobileTabsUi();
+        }
+    }
+
+    function openPanelOutput() {
+        showPanel();
+
+        if (isMobileLayout()) {
+            setMobilePanelView('output');
+        } else {
+            syncMobileTabsUi();
+        }
+
+        focusOutputTextarea();
     }
 
     function setOutputText(text) {
@@ -1748,6 +2390,8 @@
         syncApiConfigUi();
         updateManualSendUiState();
         syncAutoTriggerUiState();
+        syncFloatingWindowSettingsUi();
+        syncFloatingWindowUi();
     }
 
     function syncAutoTriggerUiState() {
@@ -1800,6 +2444,7 @@
         $(SELECTORS.apiSettings).hide();
         $(SELECTORS.templateSettings).hide();
         $(SELECTORS.autoTriggerSettings).hide();
+        $(SELECTORS.floatingSettings).hide();
         $(SELECTORS.rangeSettings).fadeIn(200);
         $(SELECTORS.startTagInput).focus();
     }
@@ -1813,6 +2458,7 @@
         $(SELECTORS.captureSendSettings).hide();
         $(SELECTORS.apiSettings).hide();
         $(SELECTORS.autoTriggerSettings).hide();
+        $(SELECTORS.floatingSettings).hide();
         $(SELECTORS.templateSettings).fadeIn(200);
         syncTemplateEditorState();
     }
@@ -1825,6 +2471,7 @@
         $(SELECTORS.templateSettings).hide();
         $(SELECTORS.apiSettings).hide();
         $(SELECTORS.autoTriggerSettings).hide();
+        $(SELECTORS.floatingSettings).hide();
         $(SELECTORS.captureSendSettings).fadeIn(200);
     }
 
@@ -1836,6 +2483,7 @@
         $(SELECTORS.templateSettings).hide();
         $(SELECTORS.captureSendSettings).hide();
         $(SELECTORS.autoTriggerSettings).hide();
+        $(SELECTORS.floatingSettings).hide();
         $(SELECTORS.apiSettings).fadeIn(200);
     }
 
@@ -1847,7 +2495,20 @@
         $(SELECTORS.templateSettings).hide();
         $(SELECTORS.captureSendSettings).hide();
         $(SELECTORS.apiSettings).hide();
+        $(SELECTORS.floatingSettings).hide();
         $(SELECTORS.autoTriggerSettings).fadeIn(200);
+    }
+
+    function switchTabToFloatingSettings() {
+        $(SELECTORS.menuBtns).removeClass('active');
+        $(SELECTORS.floatingToggleButton).addClass('active');
+
+        $(SELECTORS.rangeSettings).hide();
+        $(SELECTORS.templateSettings).hide();
+        $(SELECTORS.captureSendSettings).hide();
+        $(SELECTORS.apiSettings).hide();
+        $(SELECTORS.autoTriggerSettings).hide();
+        $(SELECTORS.floatingSettings).fadeIn(200);
     }
 
     function getLastMessageText() {
@@ -3248,6 +3909,12 @@
                             <i class="fa-solid fa-robot"></i> 自动触发
                         </button>
 
+                        <button id="my-topbar-test-floating-toggle"
+                                class="menu_button my-topbar-test-menu-btn"
+                                type="button">
+                            <i class="fa-solid fa-hand-pointer"></i> 悬浮窗设置
+                        </button>
+
                     </div>
 
                     <div class="my-topbar-test-col-middle">
@@ -3444,7 +4111,7 @@
                                 <button id="my-topbar-test-stop-manual-flow"
                                         class="menu_button my-topbar-test-menu-btn"
                                         type="button">
-                                    停止手动流程
+                                    停止流程
                                 </button>
                             </div>
                         </div>
@@ -3534,21 +4201,81 @@
                                  </div>
                              </div>
                           </div>
+                      <div id="my-topbar-test-auto-trigger-settings" class="my-topbar-test-settings-section" style="display: none;">
+                          <label for="my-topbar-test-auto-trigger-enabled" class="my-topbar-test-keep-tags-row">
+                              <input id="my-topbar-test-auto-trigger-enabled"
+                                     class="my-topbar-test-keep-tags-checkbox"
+                                     type="checkbox">
+                              <span class="my-topbar-test-keep-tags-text">开启自动触发</span>
+                          </label>
                      </div>
 
-                     <div id="my-topbar-test-auto-trigger-settings" class="my-topbar-test-settings-section" style="display: none;">
-                         <label for="my-topbar-test-auto-trigger-enabled" class="my-topbar-test-keep-tags-row">
-                             <input id="my-topbar-test-auto-trigger-enabled"
+                     <div id="my-topbar-test-floating-settings" class="my-topbar-test-settings-section" style="display: none;">
+                         <label for="my-topbar-test-floating-enabled" class="my-topbar-test-keep-tags-row">
+                             <input id="my-topbar-test-floating-enabled"
                                     class="my-topbar-test-keep-tags-checkbox"
                                     type="checkbox">
-                             <span class="my-topbar-test-keep-tags-text">开启自动触发</span>
+                             <span class="my-topbar-test-keep-tags-text">开启悬浮窗</span>
                          </label>
 
-                         <button id="my-topbar-test-auto-trigger-stop"
-                                 class="menu_button my-topbar-test-menu-btn"
-                                 type="button">
-                             停止自动流程
-                         </button>
+                         <div class="my-topbar-test-template-tip">
+                             长按然后拖拽可以移动悬浮窗位置。<br>
+                             长按然后松开，可以触发长按触发的功能。
+                         </div>
+
+                         <div class="my-topbar-test-floating-field">
+                             <div class="my-topbar-test-label">悬浮窗调整大小</div>
+
+                             <div class="my-topbar-test-floating-size-grid">
+                                 <label for="my-topbar-test-floating-size-length" class="my-topbar-test-floating-size-item">
+                                     <span class="my-topbar-test-label">长度</span>
+                                     <div class="my-topbar-test-floating-size-input-wrap">
+                                         <input id="my-topbar-test-floating-size-length"
+                                                class="my-topbar-test-floating-size-input"
+                                                type="number"
+                                                min="1"
+                                                step="1"
+                                                inputmode="numeric"
+                                                placeholder="">
+                                         <span class="my-topbar-test-floating-size-unit">px</span>
+                                     </div>
+                                 </label>
+
+                                 <label for="my-topbar-test-floating-size-width" class="my-topbar-test-floating-size-item">
+                                     <span class="my-topbar-test-label">宽度</span>
+                                     <div class="my-topbar-test-floating-size-input-wrap">
+                                         <input id="my-topbar-test-floating-size-width"
+                                                class="my-topbar-test-floating-size-input"
+                                                type="number"
+                                                min="1"
+                                                step="1"
+                                                inputmode="numeric"
+                                                placeholder="">
+                                         <span class="my-topbar-test-floating-size-unit">px</span>
+                                     </div>
+                                 </label>
+                             </div>
+                         </div>
+
+                         <div class="my-topbar-test-floating-field">
+                             <label for="my-topbar-test-floating-click-action" class="my-topbar-test-label">点击触发的功能</label>
+                             <select id="my-topbar-test-floating-click-action"
+                                     class="text_pole my-topbar-test-floating-select"></select>
+                         </div>
+
+                         <div class="my-topbar-test-floating-field">
+                             <label for="my-topbar-test-floating-long-press-action" class="my-topbar-test-label">长按触发的功能</label>
+                             <select id="my-topbar-test-floating-long-press-action"
+                                     class="text_pole my-topbar-test-floating-select"></select>
+                         </div>
+
+                         <div class="my-topbar-test-floating-field">
+                             <label for="my-topbar-test-floating-double-click-action" class="my-topbar-test-label">双击触发的功能</label>
+                             <select id="my-topbar-test-floating-double-click-action"
+                                     class="text_pole my-topbar-test-floating-select"></select>
+                         </div>
+                     </div>
+
                      </div>
 
                      <div class="my-topbar-test-col-right">
@@ -3745,17 +4472,56 @@
             });
 
         $(document)
+            .off('click.myTopbarTestFloatingToggle', SELECTORS.floatingToggleButton)
+            .on('click.myTopbarTestFloatingToggle', SELECTORS.floatingToggleButton, function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                switchTabToFloatingSettings();
+                if (isMobileLayout()) {
+                    setMobilePanelView('detail');
+                }
+            });
+
+        $(document)
             .off('change.myTopbarTestAutoTriggerEnabled', SELECTORS.autoTriggerEnabledCheckbox)
             .on('change.myTopbarTestAutoTriggerEnabled', SELECTORS.autoTriggerEnabledCheckbox, function () {
                 handleAutoTriggerEnabledCheckboxChanged();
             });
 
         $(document)
-            .off('click.myTopbarTestAutoTriggerStop', SELECTORS.autoTriggerStopButton)
-            .on('click.myTopbarTestAutoTriggerStop', SELECTORS.autoTriggerStopButton, function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                stopAutoFlow();
+            .off('change.myTopbarTestFloatingEnabled', SELECTORS.floatingEnabledCheckbox)
+            .on('change.myTopbarTestFloatingEnabled', SELECTORS.floatingEnabledCheckbox, function () {
+                handleFloatingWindowEnabledCheckboxChanged();
+            });
+
+        $(document)
+            .off('change.myTopbarTestFloatingClickAction', SELECTORS.floatingClickActionSelect)
+            .on('change.myTopbarTestFloatingClickAction', SELECTORS.floatingClickActionSelect, function () {
+                handleFloatingWindowActionSelectChanged(SELECTORS.floatingClickActionSelect, 'clickAction');
+            });
+
+        $(document)
+            .off('change.myTopbarTestFloatingLongPressAction', SELECTORS.floatingLongPressActionSelect)
+            .on('change.myTopbarTestFloatingLongPressAction', SELECTORS.floatingLongPressActionSelect, function () {
+                handleFloatingWindowActionSelectChanged(SELECTORS.floatingLongPressActionSelect, 'longPressAction');
+            });
+
+        $(document)
+            .off('change.myTopbarTestFloatingDoubleClickAction', SELECTORS.floatingDoubleClickActionSelect)
+            .on('change.myTopbarTestFloatingDoubleClickAction', SELECTORS.floatingDoubleClickActionSelect, function () {
+                handleFloatingWindowActionSelectChanged(SELECTORS.floatingDoubleClickActionSelect, 'doubleClickAction');
+            });
+
+        $(document)
+            .off('change.myTopbarTestFloatingSizeLength', SELECTORS.floatingSizeLengthInput)
+            .on('change.myTopbarTestFloatingSizeLength', SELECTORS.floatingSizeLengthInput, function () {
+                handleFloatingWindowSizeInputChanged(SELECTORS.floatingSizeLengthInput, 'length');
+            });
+
+        $(document)
+            .off('change.myTopbarTestFloatingSizeWidth', SELECTORS.floatingSizeWidthInput)
+            .on('change.myTopbarTestFloatingSizeWidth', SELECTORS.floatingSizeWidthInput, function () {
+                handleFloatingWindowSizeInputChanged(SELECTORS.floatingSizeWidthInput, 'width');
             });
 
         $(document)
@@ -4151,7 +4917,53 @@
             .on('click.myTopbarTestStopManualFlow', SELECTORS.stopManualFlowButton, function (e) {
                 e.preventDefault();
                 e.stopPropagation();
-                stopManualFlow();
+                stopFlow();
+            });
+
+        $(document)
+            .off('pointerdown.myTopbarTestFloatingWindow', SELECTORS.floatingWindow)
+            .on('pointerdown.myTopbarTestFloatingWindow', SELECTORS.floatingWindow, function (e) {
+                const originalEvent = e.originalEvent || e;
+                if (originalEvent.pointerType === 'mouse' && originalEvent.button !== 0) {
+                    return;
+                }
+
+                e.preventDefault();
+                e.stopPropagation();
+                beginFloatingWindowPress(originalEvent.pointerId, originalEvent.clientX, originalEvent.clientY, this);
+            });
+
+        $(document)
+            .off('pointermove.myTopbarTestFloatingWindow')
+            .on('pointermove.myTopbarTestFloatingWindow', function (e) {
+                const originalEvent = e.originalEvent || e;
+                const wasDragging = floatingWindowState.isDragging;
+
+                handleFloatingWindowPointerMove(originalEvent.pointerId, originalEvent.clientX, originalEvent.clientY);
+
+                if (wasDragging || floatingWindowState.isDragging) {
+                    e.preventDefault();
+                }
+            });
+
+        $(document)
+            .off('pointerup.myTopbarTestFloatingWindow pointercancel.myTopbarTestFloatingWindow')
+            .on('pointerup.myTopbarTestFloatingWindow pointercancel.myTopbarTestFloatingWindow', function (e) {
+                const originalEvent = e.originalEvent || e;
+                finalizeFloatingWindowPress(originalEvent.pointerId, originalEvent.pointerType);
+            });
+
+        $(document)
+            .off('keydown.myTopbarTestFloatingWindow', SELECTORS.floatingWindow)
+            .on('keydown.myTopbarTestFloatingWindow', SELECTORS.floatingWindow, function (e) {
+                if (e.key === 'Enter' || e.key === ' ' || e.code === 'Space') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    clearFloatingWindowSingleClickTimer();
+                    floatingWindowState.lastTapTime = 0;
+                    floatingWindowState.lastTapPointerType = '';
+                    void triggerFloatingWindowAction('clickAction');
+                }
             });
 
         $(document)
@@ -4169,11 +4981,20 @@
                 e.stopPropagation();
                 hideReplyModal();
             });
+
+        $(window)
+            .off('resize.myTopbarTestLayout')
+            .on('resize.myTopbarTestLayout', function () {
+                syncMobileTabsUi();
+                syncFloatingWindowSettingsUi();
+                syncFloatingWindowUi();
+            });
     }
 
     async function init() {
         loadSettings();
         await mountPanel();
+        mountFloatingWindow();
         syncUiFromSettings();
         syncMobileTabsUi();
         setExtractedBaseText(DEFAULT_TEXT);

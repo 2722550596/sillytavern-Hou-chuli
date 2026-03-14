@@ -62,6 +62,12 @@
                 <i class="fa-solid fa-robot"></i> 自动触发
             </button>
 
+            <button id="my-topbar-test-floating-toggle"
+                    class="menu_button my-topbar-test-menu-btn"
+                    type="button">
+                <i class="fa-solid fa-hand-pointer"></i> 悬浮窗设置
+            </button>
+
         </div>
 
         <!-- 中间：设置页面 -->
@@ -262,7 +268,7 @@
                     <button id="my-topbar-test-stop-manual-flow"
                             class="menu_button my-topbar-test-menu-btn"
                             type="button">
-                        停止手动流程
+                        停止流程
                     </button>
                 </div>
             </div>
@@ -362,12 +368,72 @@
                            type="checkbox">
                     <span class="my-topbar-test-keep-tags-text">开启自动触发</span>
                 </label>
+            </div>
 
-                <button id="my-topbar-test-auto-trigger-stop"
-                        class="menu_button my-topbar-test-menu-btn"
-                        type="button">
-                    停止自动流程
-                </button>
+            <div id="my-topbar-test-floating-settings" class="my-topbar-test-settings-section" style="display: none;">
+                <label for="my-topbar-test-floating-enabled" class="my-topbar-test-keep-tags-row">
+                    <input id="my-topbar-test-floating-enabled"
+                           class="my-topbar-test-keep-tags-checkbox"
+                           type="checkbox">
+                    <span class="my-topbar-test-keep-tags-text">开启悬浮窗</span>
+                </label>
+
+                <div class="my-topbar-test-template-tip">
+                    长按然后拖拽可以移动悬浮窗位置。<br>
+                    长按然后松开，可以触发长按触发的功能。
+                </div>
+
+                <div class="my-topbar-test-floating-field">
+                    <div class="my-topbar-test-label">悬浮窗调整大小</div>
+
+                    <div class="my-topbar-test-floating-size-grid">
+                        <label for="my-topbar-test-floating-size-length" class="my-topbar-test-floating-size-item">
+                            <span class="my-topbar-test-label">长度</span>
+                            <div class="my-topbar-test-floating-size-input-wrap">
+                                <input id="my-topbar-test-floating-size-length"
+                                       class="my-topbar-test-floating-size-input"
+                                       type="number"
+                                       min="1"
+                                       step="1"
+                                       inputmode="numeric"
+                                       placeholder="">
+                                <span class="my-topbar-test-floating-size-unit">px</span>
+                            </div>
+                        </label>
+
+                        <label for="my-topbar-test-floating-size-width" class="my-topbar-test-floating-size-item">
+                            <span class="my-topbar-test-label">宽度</span>
+                            <div class="my-topbar-test-floating-size-input-wrap">
+                                <input id="my-topbar-test-floating-size-width"
+                                       class="my-topbar-test-floating-size-input"
+                                       type="number"
+                                       min="1"
+                                       step="1"
+                                       inputmode="numeric"
+                                       placeholder="">
+                                <span class="my-topbar-test-floating-size-unit">px</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="my-topbar-test-floating-field">
+                    <label for="my-topbar-test-floating-click-action" class="my-topbar-test-label">点击触发的功能</label>
+                    <select id="my-topbar-test-floating-click-action"
+                            class="text_pole my-topbar-test-floating-select"></select>
+                </div>
+
+                <div class="my-topbar-test-floating-field">
+                    <label for="my-topbar-test-floating-long-press-action" class="my-topbar-test-label">长按触发的功能</label>
+                    <select id="my-topbar-test-floating-long-press-action"
+                            class="text_pole my-topbar-test-floating-select"></select>
+                </div>
+
+                <div class="my-topbar-test-floating-field">
+                    <label for="my-topbar-test-floating-double-click-action" class="my-topbar-test-label">双击触发的功能</label>
+                    <select id="my-topbar-test-floating-double-click-action"
+                            class="text_pole my-topbar-test-floating-select"></select>
+                </div>
             </div>
         </div>
 
