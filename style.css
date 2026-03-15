@@ -412,6 +412,12 @@
     gap: 12px;
 }
 
+.my-topbar-test-capture-send-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
 .my-topbar-test-template-tool-button {
     width: auto;
     padding: 8px 15px;
@@ -711,9 +717,31 @@ body.my-topbar-test-template-dragging .my-topbar-test-template-apply {
     padding-right: 36px;
 }
 
+.my-topbar-test-reply-modal-view {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.my-topbar-test-reply-modal-tip {
+    font-size: 13px;
+    line-height: 1.6;
+    opacity: 0.82;
+}
+
 .my-topbar-test-reply-modal-textarea {
     width: 100%;
     min-height: 260px;
+    box-sizing: border-box;
+    resize: vertical;
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 15px;
+}
+
+.my-topbar-test-reply-modal-feedback-textarea {
+    width: 100%;
+    min-height: 180px;
     box-sizing: border-box;
     resize: vertical;
     font-size: 14px;
@@ -725,6 +753,10 @@ body.my-topbar-test-template-dragging .my-topbar-test-template-apply {
     display: flex;
     justify-content: flex-end;
     gap: 10px;
+}
+
+.my-topbar-test-reply-modal-feedback-actions {
+    justify-content: space-between;
 }
 
 .my-topbar-test-floating-window {
@@ -845,6 +877,10 @@ body.my-topbar-test-template-dragging .my-topbar-test-template-apply {
         align-items: stretch;
     }
 
+    .my-topbar-test-template-preset-drawer {
+        flex: 1 1 auto;
+    }
+
     .my-topbar-test-template-preset-actions,
     .my-topbar-test-template-tools {
         justify-content: flex-end;
@@ -867,6 +903,25 @@ body.my-topbar-test-template-dragging .my-topbar-test-template-apply {
         margin: 0;
         max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 32px);
         overflow-y: auto;
+    }
+
+    .my-topbar-test-reply-modal {
+        align-items: center;
+        justify-content: center;
+        overflow-y: auto;
+        padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px));
+        box-sizing: border-box;
+    }
+
+    .my-topbar-test-reply-modal-card {
+        width: min(100%, 720px);
+        margin: 0;
+        max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 32px);
+        overflow-y: auto;
+    }
+
+    .my-topbar-test-reply-modal-actions {
+        flex-wrap: wrap;
     }
 
     .my-topbar-test-api-stop-field {

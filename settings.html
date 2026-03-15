@@ -56,12 +56,6 @@
                 <i class="fa-solid fa-link"></i> api链接
             </button>
 
-            <button id="my-topbar-test-auto-trigger-toggle"
-                    class="menu_button my-topbar-test-menu-btn"
-                    type="button">
-                <i class="fa-solid fa-robot"></i> 自动触发
-            </button>
-
             <button id="my-topbar-test-floating-toggle"
                     class="menu_button my-topbar-test-menu-btn"
                     type="button">
@@ -254,6 +248,22 @@
                     先手动截取，再把当前截取框中的内容复制发送给 AI。发送完成后会弹出确认框，确认后替换当前聊天窗口最后一条消息。
                 </div>
 
+                <div class="my-topbar-test-capture-send-options">
+                    <label for="my-topbar-test-auto-trigger-enabled" class="my-topbar-test-keep-tags-row">
+                        <input id="my-topbar-test-auto-trigger-enabled"
+                               class="my-topbar-test-keep-tags-checkbox"
+                               type="checkbox">
+                        <span class="my-topbar-test-keep-tags-text">开启自动触发</span>
+                    </label>
+
+                    <label for="my-topbar-test-skip-reply-confirm" class="my-topbar-test-keep-tags-row">
+                        <input id="my-topbar-test-skip-reply-confirm"
+                               class="my-topbar-test-keep-tags-checkbox"
+                               type="checkbox">
+                        <span class="my-topbar-test-keep-tags-text">跳过确认</span>
+                    </label>
+                </div>
+
                 <div class="my-topbar-test-capture-send-actions">
                     <button id="my-topbar-test-manual-trigger"
                             class="menu_button my-topbar-test-menu-btn my-topbar-test-trigger-btn"
@@ -360,16 +370,6 @@
                 </div>
             </div>
 
-            <!-- 自动触发 -->
-            <div id="my-topbar-test-auto-trigger-settings" class="my-topbar-test-settings-section" style="display: none;">
-                <label for="my-topbar-test-auto-trigger-enabled" class="my-topbar-test-keep-tags-row">
-                    <input id="my-topbar-test-auto-trigger-enabled"
-                           class="my-topbar-test-keep-tags-checkbox"
-                           type="checkbox">
-                    <span class="my-topbar-test-keep-tags-text">开启自动触发</span>
-                </label>
-            </div>
-
             <div id="my-topbar-test-floating-settings" class="my-topbar-test-settings-section" style="display: none;">
                 <label for="my-topbar-test-floating-enabled" class="my-topbar-test-keep-tags-row">
                     <input id="my-topbar-test-floating-enabled"
@@ -451,26 +451,61 @@
         </div>
     </div>
 
-    <div id="my-topbar-test-reply-modal" class="my-topbar-test-reply-modal" style="display: none;">
-        <div class="my-topbar-test-reply-modal-card">
-            <button id="my-topbar-test-reply-modal-close"
-                    class="menu_button my-topbar-test-reply-modal-close"
-                    type="button"
-                    aria-label="关闭回复确认框">
-                ×
-            </button>
-            <div class="my-topbar-test-reply-modal-title">AI 回复确认</div>
-            <textarea id="my-topbar-test-reply-modal-text"
-                      class="text_pole my-topbar-test-reply-modal-textarea"
-                      spellcheck="false"
-                      placeholder="这里会显示 AI 的完整回复，可编辑后再确认替换。"></textarea>
-            <div class="my-topbar-test-reply-modal-actions">
-                <button id="my-topbar-test-reply-modal-confirm"
-                        class="menu_button my-topbar-test-template-tool-button"
-                        type="button">
-                    确认
+        <div id="my-topbar-test-reply-modal" class="my-topbar-test-reply-modal" style="display: none;">
+            <div class="my-topbar-test-reply-modal-card">
+                <button id="my-topbar-test-reply-modal-close"
+                        class="menu_button my-topbar-test-reply-modal-close"
+                        type="button"
+                        aria-label="关闭回复确认框">
+                    ×
                 </button>
+                <div id="my-topbar-test-reply-modal-title" class="my-topbar-test-reply-modal-title">AI 回复确认</div>
+
+                <div id="my-topbar-test-reply-modal-confirm-view" class="my-topbar-test-reply-modal-view">
+                    <textarea id="my-topbar-test-reply-modal-text"
+                              class="text_pole my-topbar-test-reply-modal-textarea"
+                              spellcheck="false"
+                              placeholder="这里会显示 AI 的完整回复，可编辑后再确认替换。"></textarea>
+                    <div class="my-topbar-test-reply-modal-actions">
+                        <button id="my-topbar-test-reply-modal-feedback"
+                                class="menu_button my-topbar-test-template-tool-button"
+                                type="button">
+                            肘击
+                        </button>
+                        <button id="my-topbar-test-reply-modal-retry"
+                                class="menu_button my-topbar-test-template-tool-button"
+                                type="button">
+                            重来
+                        </button>
+                        <button id="my-topbar-test-reply-modal-confirm"
+                                class="menu_button my-topbar-test-template-tool-button"
+                                type="button">
+                            确认
+                        </button>
+                    </div>
+                </div>
+
+                <div id="my-topbar-test-reply-modal-feedback-view" class="my-topbar-test-reply-modal-view" style="display: none;">
+                    <div class="my-topbar-test-reply-modal-tip">
+                        可以输入对此次不满意的地方，提交之后根据您的反馈重新生成
+                    </div>
+                    <textarea id="my-topbar-test-reply-modal-feedback-input"
+                              class="text_pole my-topbar-test-reply-modal-feedback-textarea"
+                              spellcheck="false"
+                              placeholder="请输入这次不满意的地方"></textarea>
+                    <div class="my-topbar-test-reply-modal-actions my-topbar-test-reply-modal-feedback-actions">
+                        <button id="my-topbar-test-reply-modal-feedback-back"
+                                class="menu_button my-topbar-test-template-tool-button"
+                                type="button">
+                            返回
+                        </button>
+                        <button id="my-topbar-test-reply-modal-feedback-submit"
+                                class="menu_button my-topbar-test-template-tool-button"
+                                type="button">
+                            提交
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
-    </div>
 </div>
