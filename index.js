@@ -1608,6 +1608,34 @@
         syncReplyModalView();
     }
 
+    function fadeInReplyModal() {
+        const $modal = $(SELECTORS.replyModal);
+        if (!$modal.length) {
+            return;
+        }
+
+        $modal.stop(true, true);
+        $modal.css({
+            display: 'flex',
+            opacity: 0,
+        });
+        $modal.animate({ opacity: 1 }, 200);
+    }
+
+    function fadeOutReplyModal() {
+        const $modal = $(SELECTORS.replyModal);
+        if (!$modal.length) {
+            return;
+        }
+
+        $modal.stop(true, true).animate({ opacity: 0 }, 200, function () {
+            $(this).css({
+                display: 'none',
+                opacity: '',
+            });
+        });
+    }
+
     function showReplyModal(text, chatId = '', source = '', promptText = '') {
         replyModalState.chatId = String(chatId ?? '');
         replyModalState.source = String(source ?? '');
@@ -1618,7 +1646,7 @@
         $(SELECTORS.replyModalFeedbackInput).val('');
         ensureReplyModalMounted();
         syncReplyModalView();
-        $(SELECTORS.replyModal).fadeIn(200);
+        fadeInReplyModal();
         focusReplyModalTextarea();
     }
 
@@ -1632,7 +1660,7 @@
         replyModalState.feedbackText = '';
         syncReplyModalView();
         $(SELECTORS.replyModalFeedbackInput).val('');
-        $(SELECTORS.replyModal).fadeOut(200);
+        fadeOutReplyModal();
 
         if (source === 'auto' && !shouldKeepAutoBusy) {
             autoTriggerState.isBusy = false;
