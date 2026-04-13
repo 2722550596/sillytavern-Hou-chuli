@@ -93,12 +93,14 @@
 
     const DEFAULT_SETTINGS = Object.freeze({
         keepTags: false,
-        onlyReplaceInTags: false,
+        onlyReplaceInTags: false, // 如果使用正则，此项后续可作为 "仅替换正则匹配部分" 的开关
         skipReplyConfirm: false,
-        startTag: '',
-        endTag: '',
+        extractRegex: '',   // 提取正则 (例如: <thought>([\s\S]*?)<\/thought> )
+        filterRegex: '',    // 过滤正则 (例如: 去除特定无用字符)
+        replaceRules: '', // <-- 新增此项：保存多重清洗规则
         templatePresets: Object.freeze([]),
         currentTemplatePresetId: '',
+        autoTriggerPresetId: '', // -- 新增：自动触发专用预设 --
         floatingWindow: Object.freeze({
             enabled: false,
             clickAction: '',
@@ -125,6 +127,12 @@
             customApiBaseUrl: '',
             customApiKey: '',
             customModelName: '',
+            // === 新增：上下文注入配置 ===
+            includeWorldInfo: true,
+            maxHistoryCount: '5',
+            historySkipCount: '1', // 默认跳过最新 1 条
+            historyReplaceRules: '', // 历史记录专属正则清洗字典
+            systemPrompt: 'You are a helpful assistant.',
         }),
     });
 
@@ -176,8 +184,10 @@
         floatingSizeWidthInput: '#my-topbar-test-floating-size-width',
         keepTagsCheckbox: '#my-topbar-test-keep-tags',
         onlyReplaceInTagsCheckbox: '#my-topbar-test-only-replace-in-tags',
-        startTagInput: '#my-topbar-test-start-tag',
-        endTagInput: '#my-topbar-test-end-tag',
+        extractRegexInput: '#my-topbar-test-extract-regex',
+        filterRegexInput: '#my-topbar-test-filter-regex',
+        autoTriggerPresetSelect: '#my-topbar-test-auto-trigger-preset', // 自动触发预设框
+
 
         templateToggleButton: '#my-topbar-test-template-toggle',
         templateSettings: '#my-topbar-test-template-settings',
@@ -208,6 +218,9 @@
         manualSendButton: '#my-topbar-test-manual-send',
         stopManualFlowButton: '#my-topbar-test-stop-manual-flow',
         outputTextarea: '#my-topbar-test-output',
+        directReplaceButton: '#my-topbar-test-direct-replace', // <-- 新增这一行
+
+
 
         apiTemperatureInput: '#my-topbar-test-api-temperature',
         apiTopPInput: '#my-topbar-test-api-top-p',
@@ -250,7 +263,15 @@
         floatingWindowImage: '#my-topbar-test-floating-image',
 
         templateApplyButton: '.my-topbar-test-template-apply',
-        menuBtns: '.my-topbar-test-menu-btn' // 新增菜单按钮统称
+        menuBtns: '.my-topbar-test-menu-btn', // 新增菜单按钮统称
+        apiIncludeWorldInfoCheckbox: '#my-topbar-test-api-include-wi',
+        apiMaxHistoryCountInput: '#my-topbar-test-api-max-history',
+        apiSystemPromptInput: '#my-topbar-test-api-system-prompt',
+        // === 修复：多重正则清洗字典的 ID 绑定 ===
+        replaceRulesInput: '#my-topbar-test-replace-rules',
+        // === 新增：上下文历史记录增强 UI 选择器 ===
+        apiHistorySkipCountInput: '#my-topbar-test-api-history-skip',
+        apiHistoryReplaceRulesInput: '#my-topbar-test-api-history-replace-rules',
     });
 
     let initialized = false;
@@ -371,6 +392,7 @@
             name,
             templates: createDefaultTemplateItems(),
             selectedTemplateIds: [],
+            apiConfig: deepClone(DEFAULT_SETTINGS.apiConfig),
         };
     }
 
@@ -456,6 +478,7 @@
             name: String(item?.name ?? item?.label ?? '').trim() || (index === 0 ? DEFAULT_PRESET_NAME : `${DEFAULT_PRESET_NAME}(${index})`),
             templates,
             selectedTemplateIds: normalizeSelectedTemplateIds(item?.selectedTemplateIds, templates),
+            apiConfig: normalizeApiConfig(item?.apiConfig),
         };
     }
 
@@ -513,6 +536,12 @@
             customApiBaseUrl: String(source.customApiBaseUrl ?? defaultApiConfig.customApiBaseUrl),
             customApiKey: String(source.customApiKey ?? defaultApiConfig.customApiKey),
             customModelName: String(source.customModelName ?? defaultApiConfig.customModelName),
+            // === 新增：标准化上下文配置 ===
+            includeWorldInfo: typeof source.includeWorldInfo === 'boolean' ? source.includeWorldInfo : defaultApiConfig.includeWorldInfo,
+            maxHistoryCount: String(source.maxHistoryCount ?? defaultApiConfig.maxHistoryCount),
+            systemPrompt: String(source.systemPrompt ?? defaultApiConfig.systemPrompt),
+            historySkipCount: String(source.historySkipCount ?? defaultApiConfig.historySkipCount),
+            historyReplaceRules: String(source.historyReplaceRules ?? defaultApiConfig.historyReplaceRules),
         };
     }
 
@@ -537,16 +566,10 @@
             settings.skipReplyConfirm = DEFAULT_SETTINGS.skipReplyConfirm;
         }
 
-        if (typeof settings.startTag !== 'string') {
-            settings.startTag = DEFAULT_SETTINGS.startTag;
-        }
-
-        if (typeof settings.endTag !== 'string') {
-            settings.endTag = DEFAULT_SETTINGS.endTag;
-        }
-
-        settings.startTag = normalizeTagName(settings.startTag);
-        settings.endTag = normalizeTagName(settings.endTag);
+        if (typeof settings.extractRegex !== 'string') settings.extractRegex = '';
+        if (typeof settings.filterRegex !== 'string') settings.filterRegex = '';
+        if (typeof settings.replaceRules !== 'string') settings.replaceRules = '';
+        if (typeof settings.autoTriggerPresetId !== 'string') settings.autoTriggerPresetId = '';
 
         if (!Array.isArray(settings.templatePresets)) {
             const migratedTemplates = normalizeTemplateList(settings.templates, createDefaultTemplateItems());
@@ -1030,10 +1053,6 @@
         `);
     }
 
-    function getApiConfig() {
-        return loadSettings().apiConfig;
-    }
-
     function resolveApiNumber(value, defaultValue, parser = Number) {
         const normalized = String(value ?? '').trim();
         if (normalized === '') {
@@ -1059,12 +1078,32 @@
             customApiBaseUrl: String(apiConfig.customApiBaseUrl ?? ''),
             customApiKey: String(apiConfig.customApiKey ?? ''),
             customModelName: String(apiConfig.customModelName ?? ''),
+            includeWorldInfo: Boolean(apiConfig.includeWorldInfo),
+            maxHistoryCount: resolveApiNumber(apiConfig.maxHistoryCount, 5, value => Number.parseInt(value, 10)),
+            historySkipCount: resolveApiNumber(apiConfig.historySkipCount, 1, value => Number.parseInt(value, 10)),
+            systemPrompt: String(apiConfig.systemPrompt ?? ''),
+            historyReplaceRules: String(apiConfig.historyReplaceRules ?? ''),
         };
+    }
+
+    function getApiConfig() {
+        // 修改：从当前预设中获取配置，如果不存在则退回到全局默认
+        const settings = loadSettings();
+        const currentPreset = getCurrentTemplatePreset(settings);
+        return currentPreset ? currentPreset.apiConfig : settings.apiConfig;
     }
 
     function updateApiConfigField(key, value) {
         const settings = loadSettings();
-        settings.apiConfig[key] = value;
+        const currentPreset = getCurrentTemplatePreset(settings);
+        
+        if (currentPreset) {
+            // 修改：将配置写入当前预设
+            currentPreset.apiConfig[key] = value;
+        } else {
+            // 保险兜底
+            settings.apiConfig[key] = value;
+        }
         savePluginSettings();
     }
 
@@ -1166,6 +1205,11 @@
         const isCustomSource = apiConfig.modelSource === 'custom';
         $(SELECTORS.apiCustomConfig).toggle(isCustomSource);
         syncCustomModelSelectUi();
+        $(SELECTORS.apiIncludeWorldInfoCheckbox).prop('checked', apiConfig.includeWorldInfo);
+        $(SELECTORS.apiMaxHistoryCountInput).val(apiConfig.maxHistoryCount);
+        $(SELECTORS.apiSystemPromptInput).val(apiConfig.systemPrompt);
+        $(SELECTORS.apiHistoryReplaceRulesInput).val(apiConfig.historyReplaceRules);
+        $(SELECTORS.apiHistorySkipCountInput).val(apiConfig.historySkipCount);
     }
 
     function isMobileLayout() {
@@ -1398,45 +1442,11 @@
     }
 
     function syncStopStringWithEndTagIfNeeded() {
-        const settings = loadSettings();
-        const apiConfig = settings.apiConfig;
-        const stopString = String(apiConfig.stopString ?? '');
-
-        if (stopString.trim()) {
-            return;
-        }
-
-        const startTagName = String(settings.startTag ?? '').trim();
-        const endTagName = String(settings.endTag ?? '').trim();
-
-        if (!startTagName || !endTagName) {
-            return;
-        }
-
-        const normalized = normalizeStopString('', true, endTagName);
-        if (!normalized) {
-            return;
-        }
-
-        apiConfig.stopString = normalized;
-        savePluginSettings();
-        $(SELECTORS.apiStopStringInput).val(normalized);
     }
 
     function getEffectiveStopString() {
         const settings = loadSettings();
-        const stopString = String(settings.apiConfig.stopString ?? '');
-        if (stopString.trim()) {
-            return stopString;
-        }
-
-        const startTagName = String(settings.startTag ?? '').trim();
-        const endTagName = String(settings.endTag ?? '').trim();
-        if (!startTagName || !endTagName) {
-            return '';
-        }
-
-        return normalizeStopString('', true, endTagName);
+        return String(settings.apiConfig.stopString ?? '').trim();
     }
 
     function applyStopStringToReplyText(replyText, stopString) {
@@ -1474,40 +1484,29 @@
         return '';
     }
 
-    async function generateWithCustomApi(promptText, resolvedApiConfig) {
+    /**
+     * 修改后的自定义 API 生成函数
+     * @param {Array} messages - 消息对象数组 [{role, content}]
+     */
+    async function generateWithCustomApi(messages, resolvedApiConfig) {
         const baseUrl = normalizeCustomApiBaseUrl(resolvedApiConfig.customApiBaseUrl);
         const apiKey = String(resolvedApiConfig.customApiKey ?? '').trim();
         const modelName = String(resolvedApiConfig.customModelName ?? '').trim();
 
-        if (!baseUrl) {
-            throw new Error('请先填写 API地址。');
-        }
-
-        if (!apiKey) {
-            throw new Error('请先填写 API密钥。');
-        }
-
-        if (!modelName) {
-            throw new Error('请先填写 模型名称。');
+        if (!baseUrl || !apiKey || !modelName) {
+            throw new Error('API 配置不完整（地址/密钥/模型名）。');
         }
 
         const url = joinUrl(baseUrl, 'chat/completions');
-        if (!url) {
-            throw new Error('API地址不合法。');
-        }
-
+        
+        // 构造标准的 OpenAI 格式 Body
         const body = {
             model: modelName,
-            messages: [
-                {
-                    role: 'user',
-                    content: String(promptText ?? ''),
-                },
-            ],
-            temperature: resolvedApiConfig.temperature,
-            top_p: resolvedApiConfig.topP,
-            presence_penalty: resolvedApiConfig.presencePenalty,
-            frequency_penalty: resolvedApiConfig.frequencyPenalty,
+            messages: messages, // 直接使用传入的消息数组
+            temperature: resolvedApiConfig.temperature ?? 1.0,
+            top_p: resolvedApiConfig.topP ?? 0.9,
+            presence_penalty: resolvedApiConfig.presencePenalty ?? 0,
+            frequency_penalty: resolvedApiConfig.frequencyPenalty ?? 0,
             stream: false,
         };
 
@@ -1539,6 +1538,52 @@
         return String(content);
     }
 
+    /**
+     * 核心：构造包含 System 和 精细化控制的历史记录 Payload
+     */
+    async function buildPayloadMessages(promptText, config, context) {
+        const messages = [];
+
+        // 1. 系统提示词
+        let systemContent = config.systemPrompt || "You are a helpful assistant.";
+        messages.push({ role: 'system', content: systemContent });
+
+        // 2. 聊天历史记录处理
+        const maxHistory = parseInt(config.maxHistoryCount) || 0;
+        const skipCount = parseInt(config.historySkipCount) || 0;
+        
+        if (maxHistory > 0 && Array.isArray(context.chat)) {
+            // 核心逻辑 1：剔除末尾的 skipCount 条消息
+            const validChat = skipCount > 0 ? context.chat.slice(0, -skipCount) : context.chat;
+            // 核心逻辑 2：从剩余消息中截取 maxHistory 条
+            const historySlice = validChat.slice(-maxHistory);
+            
+            historySlice.forEach(msg => {
+                if (msg && msg.mes && msg.is_system !== true) {
+                    let cleanMes = msg.mes;
+                    
+                    // 核心逻辑 3：应用历史记录的多重正则清洗
+                    if (config.historyReplaceRules) {
+                        cleanMes = applyRegexReplacements(cleanMes, config.historyReplaceRules);
+                    }
+                    
+                    // 防止正则清洗后变成空消息导致 API 报错
+                    if (cleanMes.trim()) {
+                        messages.push({
+                            role: msg.is_user ? 'user' : 'assistant',
+                            content: cleanMes
+                        });
+                    }
+                }
+            });
+        }
+
+        // 3. 压入当前插件提取并格式化好的最新输入
+        messages.push({ role: 'user', content: promptText });
+
+        return messages;
+    }
+
     function resolveReplyRequestEnvironment() {
         const resolvedApiConfig = getResolvedApiConfig();
         const latestContext = SillyTavern.getContext();
@@ -1559,28 +1604,83 @@
         };
     }
 
+    // async function requestReplyText(promptText, requestEnvironment = resolveReplyRequestEnvironment()) {
+    //     const { resolvedApiConfig, latestContext, isCustomSource } = requestEnvironment;
+        
+    //     // 获取当前激活的功能配置（包含历史条数、WI开关等）
+    //     const featureConfig = {
+    //         includeWorldInfo: resolvedApiConfig.includeWorldInfo ?? true,
+    //         maxHistoryCount: resolvedApiConfig.maxHistoryCount ?? 5,
+    //         systemPrompt: resolvedApiConfig.systemPrompt || ""
+    //     };
+
+    //     // 执行 Path B：打包消息
+    //     const messages = buildPayloadMessages(promptText, featureConfig, latestContext);
+
+    //     try {
+    //         let replyText = '';
+    //         if (isCustomSource) {
+    //             // 调用升级后的 API 函数
+    //             replyText = await generateWithCustomApi(messages, resolvedApiConfig);
+    //         } else {
+    //             // 如果使用酒馆原生渠道，generateRaw 也支持传递已格式化的数组或 Prompt
+    //             // 注意：某些旧版 ST 环境可能需要将 messages 转回文本，视具体 API 而定
+    //             replyText = await latestContext.generateRaw({ 
+    //                 prompt: messages // 大部分现代扩展支持直接传 Array
+    //             });
+    //         }
+    //         return applyStopStringToReplyText(replyText, getEffectiveStopString());
+    //     } catch (e) {
+    //         console.error("生成回复失败:", e);
+    //         throw e;
+    //     }
+    // }
+
     async function requestReplyText(promptText, requestEnvironment = resolveReplyRequestEnvironment()) {
         const { resolvedApiConfig, latestContext, isCustomSource } = requestEnvironment;
-        let restoreOverrides = () => {};
+        
+        // 获取当前激活的功能配置（包含历史条数、WI开关等）
+        const featureConfig = {
+            includeWorldInfo: resolvedApiConfig.includeWorldInfo ?? true,
+            maxHistoryCount: resolvedApiConfig.maxHistoryCount ?? 5,
+            systemPrompt: resolvedApiConfig.systemPrompt || ""
+        };
+
+        // 执行 Path B：打包消息
+        const messages = await buildPayloadMessages(promptText, featureConfig, latestContext);
+
+        // --- 新增：调试打印逻辑 ---
+        console.groupCollapsed(`%c[AI Request] %c目标: ${isCustomSource ? '自定义 API' : '酒馆原生'}`, "color: #2196F3; font-weight: bold;", "color: inherit;");
+        console.log("配置摘要:", featureConfig);
+        console.log("模型名称:", resolvedApiConfig.customModelName || "原生默认");
+        console.log("完整消息流 (Messages):");
+        console.table(messages); // 以表格形式展示 role 和 content，非常直观
+        console.log("原始 JSON 负载:", JSON.stringify({ model: resolvedApiConfig.customModelName, messages }, null, 2));
+        console.groupEnd();
+        // -----------------------
 
         try {
             let replyText = '';
             if (isCustomSource) {
-                replyText = await generateWithCustomApi(promptText, resolvedApiConfig);
+                // 调用升级后的 API 函数
+                replyText = await generateWithCustomApi(messages, resolvedApiConfig);
             } else {
-                restoreOverrides = applyTemporaryGenerationOverrides(latestContext, resolvedApiConfig);
-                if (typeof latestContext.generateRaw === 'function') {
-                    replyText = await latestContext.generateRaw({ prompt: promptText });
-                } else {
-                    replyText = await latestContext.generateQuietPrompt({ quietPrompt: promptText });
-                }
+                // 如果使用酒馆原生渠道
+                replyText = await latestContext.generateRaw({ 
+                    prompt: messages 
+                });
             }
 
+            // 成功拿到回复时也可以打个日志
+            console.log(`%c[AI Reply] %c内容长度: ${replyText?.length || 0}`, "color: #4CAF50; font-weight: bold;", "color: inherit;");
+            
             return applyStopStringToReplyText(replyText, getEffectiveStopString());
-        } finally {
-            restoreOverrides();
+        } catch (e) {
+            console.error("%c[AI Request Error]", "color: #f44336; font-weight: bold;", e);
+            throw e;
         }
     }
+
 
     function syncReplyModalView() {
         const isFeedbackMode = replyModalState.mode === 'feedback';
@@ -1799,48 +1899,6 @@
         return String(value ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
-    function extractAllTagInnerTexts(text, startTag, endTag) {
-        const sourceText = String(text ?? '');
-        const normalizedStartTag = String(startTag ?? '');
-        const normalizedEndTag = String(endTag ?? '');
-
-        if (!normalizedStartTag || !normalizedEndTag) {
-            return [];
-        }
-
-        const regex = new RegExp(`${escapeRegExp(normalizedStartTag)}([\\s\\S]*?)${escapeRegExp(normalizedEndTag)}`, 'g');
-        const values = [];
-        let match;
-
-        while ((match = regex.exec(sourceText)) !== null) {
-            values.push(match[1] ?? '');
-            if (match.index === regex.lastIndex) {
-                regex.lastIndex += 1;
-            }
-        }
-
-        return values;
-    }
-
-    function replaceAllTagInnerTexts(sourceText, startTag, endTag, replacements) {
-        const normalizedSourceText = String(sourceText ?? '');
-        const normalizedStartTag = String(startTag ?? '');
-        const normalizedEndTag = String(endTag ?? '');
-
-        if (!normalizedStartTag || !normalizedEndTag) {
-            return normalizedSourceText;
-        }
-
-        const regex = new RegExp(`${escapeRegExp(normalizedStartTag)}([\\s\\S]*?)${escapeRegExp(normalizedEndTag)}`, 'g');
-        let index = 0;
-
-        return normalizedSourceText.replace(regex, () => {
-            const replacement = index < replacements.length ? replacements[index] : '';
-            index += 1;
-            return `${normalizedStartTag}${replacement}${normalizedEndTag}`;
-        });
-    }
-
     function appendUnreplaceableContentToOutput(unreplaceableText) {
         const normalized = String(unreplaceableText ?? '').trim();
         if (!normalized) {
@@ -1984,10 +2042,9 @@
             }
 
             const originalMes = String(message.mes ?? '');
-            const oldInnerTexts = extractAllTagInnerTexts(originalMes, rangeConfig.startTag, rangeConfig.endTag);
-            const newInnerTexts = extractAllTagInnerTexts(replyText, rangeConfig.startTag, rangeConfig.endTag);
+            rangeConfig.extractRegex.lastIndex = 0; // 确保充置
 
-            if (oldInnerTexts.length === 0 || newInnerTexts.length === 0 || oldInnerTexts.length !== newInnerTexts.length) {
+            if (!rangeConfig.extractRegex.test(originalMes)) {
                 if (shouldCloseModal) {
                     hideReplyModal();
                 } else if (replySource === 'auto') {
@@ -1998,7 +2055,8 @@
                 return false;
             }
 
-            message.mes = replaceAllTagInnerTexts(originalMes, rangeConfig.startTag, rangeConfig.endTag, newInnerTexts);
+            rangeConfig.extractRegex.lastIndex = 0;
+            message.mes = originalMes.replace(rangeConfig.extractRegex, replyText);
         } else {
             message.mes = replyText;
         }
@@ -2131,6 +2189,39 @@
             chatId: chatIdBefore,
         });
     }
+
+    async function handleDirectReplace() {
+        if (manualSendState.isBusy) {
+            showMessage('warning', '当前正在发送给 AI 中，无法强行替换');
+            return;
+        }
+
+        const outputText = getOutputText(); // 读取截取框与输出框的当前文本
+        if (!outputText.trim()) {
+            showMessage('warning', '当前截取框里没有可替换的文字。');
+            return;
+        }
+
+        // 调用内置的方法询问是否确认替换（如果勾选了"跳过确认"则跳过这步）
+        if (!shouldSkipReplyConfirm()) {
+            const confirmed = await askConfirmDialog(
+                '直接替换', 
+                '确定要把输出框内容直接替换到当前聊天最后一条消息吗？\n（注：如果您勾选了“仅替换标签内”，将会按照提取正则把这部分内容精准塞回原文本中）'
+            );
+            if (!confirmed) {
+                return;
+            }
+        }
+
+        // 调用刚刚完美修复过的 applyReplyReplacement
+        await applyReplyReplacement({
+            replyText: outputText,
+            chatId: getCurrentChatIdValue(), // 锁定当前聊天 ID
+            source: 'manual',                // 以 manual 的身份运行
+            closeModal: false,               // 不涉及关闭 ReplyModal
+        });
+    }
+
 
     async function resendReplyFromModal(promptText) {
         const normalizedPromptText = String(promptText ?? '').trim();
@@ -2542,16 +2633,17 @@
 
                 // 复用手动发送，但标记为 auto 来源以便停止自动流程时走 B 行为。
                 const chatIdBefore = getCurrentChatIdValue();
-                const outputText = getOutputText().trim();
+                const settings = loadSettings();
+                // 传第三个参数强制指定预设 ID
+                const outputText = buildOutputFromSelectedTemplates(extractedBaseText, settings, settings.autoTriggerPresetId).trim();
+
                 if (!outputText) {
                     return;
                 }
 
-                await runReplyRequestFlow(outputText, {
-                    source: 'auto',
-                    chatId: chatIdBefore,
-                    autoRequestId: requestId,
-                });
+                const autotext = buildOutputFromSelectedTemplates(extractedBaseText, loadSettings(), loadSettings().autoTriggerPresetId);
+                await runReplyRequestFlow(autotext, { source: 'auto', chatId: chatIdBefore, autoRequestId: requestId });
+
             } catch (error) {
                 console.error(`[${MODULE_NAME}] 自动触发流程失败`, error);
                 showMessage('error', error instanceof Error ? error.message : '自动触发流程失败。');
@@ -2660,31 +2752,25 @@
         extractedBaseText = String(text ?? '');
     }
 
-    function sanitizeSingleTagInput(selector) {
+    // 1. 新增一个不会剥夺特殊符号的读取方法
+    function updateRegexSettingFromInput(selector, settingsKey) {
         const $input = $(selector);
         if (!$input.length) {
             return '';
         }
 
-        const normalized = normalizeTagName($input.val());
-        if ($input.val() !== normalized) {
-            $input.val(normalized);
-        }
-
-        return normalized;
-    }
-
-    function updateTagSettingFromInput(selector, settingsKey) {
-        const normalized = sanitizeSingleTagInput(selector);
+        // 直接读取原始字符串，不去做任何替换和过滤
+        const originalValue = String($input.val() ?? '');
         const settings = loadSettings();
 
-        if (settings[settingsKey] !== normalized) {
-            settings[settingsKey] = normalized;
+        if (settings[settingsKey] !== originalValue) {
+            settings[settingsKey] = originalValue;
             savePluginSettings();
         }
 
-        return normalized;
+        return originalValue;
     }
+
 
     function syncKeepTagsSettingFromCheckbox() {
         const settings = loadSettings();
@@ -2719,11 +2805,16 @@
         $(SELECTORS.keepTagsCheckbox).prop('checked', settings.keepTags);
         syncOnlyReplaceInTagsUi();
         $(SELECTORS.skipReplyConfirmCheckbox).prop('checked', settings.skipReplyConfirm);
-        $(SELECTORS.startTagInput).val(settings.startTag);
-        $(SELECTORS.endTagInput).val(settings.endTag);
+
+        // --- 核心修改区：填入正则的值 (代替旧的 startTag/endTag) ---
+        $(SELECTORS.extractRegexInput).val(settings.extractRegex || '');
+        $(SELECTORS.filterRegexInput).val(settings.filterRegex || '');
+        $(SELECTORS.replaceRulesInput).val(settings.replaceRules || '');
+        // --------------------------------------------------------
 
         renderTemplateList();
         syncTemplateEditorState();
+        syncAutoTriggerPresetSelectUi();
         syncApiConfigUi();
         updateManualSendUiState();
         syncAutoTriggerUiState();
@@ -2731,46 +2822,149 @@
         syncFloatingWindowUi();
     }
 
+
     function syncAutoTriggerUiState() {
         $(SELECTORS.autoTriggerEnabledCheckbox).prop('checked', isAutoTriggerEnabledForCurrentChat());
     }
 
-    function getRangeConfig() {
-        const startName = updateTagSettingFromInput(SELECTORS.startTagInput, 'startTag');
-        const endName = updateTagSettingFromInput(SELECTORS.endTagInput, 'endTag');
-        const keepTags = syncKeepTagsSettingFromCheckbox();
+    // 1. 强制数据保存：拦截因为由于失焦或DOM销毁导致的数据未保存
+    function forceSaveAllRegexSettings() {
+        const settings = loadSettings();
+        const eVal = $('#my-topbar-test-extract-regex').val();
+        const fVal = $('#my-topbar-test-filter-regex').val();
+        const rVal = $('#my-topbar-test-replace-rules').val();
+        const hrVal = $('#my-topbar-test-api-history-replace-rules').val();
+        
+        if (eVal !== undefined) settings.extractRegex = String(eVal);
+        if (fVal !== undefined) settings.filterRegex = String(fVal);
+        if (rVal !== undefined) settings.replaceRules = String(rVal);
+        if (hrVal !== undefined) settings.apiConfig.historyReplaceRules = String(hrVal);
+        
+        savePluginSettings();
+    }
 
-        if (!startName && !endName) {
-            return {
-                enabled: false,
-                invalid: false,
-                keepTags,
-                startTag: '',
-                endTag: '',
-            };
+    // 2. 多重清洗字典执行器 (保留尾部空格)
+    function applyRegexReplacements(text, rulesText) {
+        if (!rulesText || !text) return text;
+        const lines = rulesText.split('\n');
+        let result = String(text);
+
+        for (const line of lines) {
+            if (!line.trim() || !line.includes('===')) continue;
+
+            const splitIndex = line.indexOf('===');
+            const rawSearchPart = line.slice(0, splitIndex).trim(); 
+            let rawReplacePart = line.slice(splitIndex + 3); 
+            
+            // 剔除恼人的 Windows 回车符，但【保留手动输入的空格】
+            if (rawReplacePart.endsWith('\r')) {
+                rawReplacePart = rawReplacePart.slice(0, -1);
+            }
+            
+            // 允许使用 \n 和 \t
+            rawReplacePart = rawReplacePart.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+
+            if (!rawSearchPart) continue;
+
+            let regex;
+            if (rawSearchPart.startsWith('/') && rawSearchPart.lastIndexOf('/') > 0) {
+                const lastSlash = rawSearchPart.lastIndexOf('/');
+                const pattern = rawSearchPart.substring(1, lastSlash);
+                const flags = rawSearchPart.substring(lastSlash + 1);
+                try {
+                    regex = new RegExp(pattern, flags);
+                } catch (e) {
+                    continue; 
+                }
+            } else {
+                regex = new RegExp(escapeRegExp(rawSearchPart), 'g');
+            }
+
+            result = result.replace(regex, rawReplacePart);
+        }
+        return result;
+    }
+
+    // 3. 获取正则配置 (供提取和 applyReplyReplacement 替换时调用)
+    function getRangeConfig() {
+        // 第一时间强制同步 UI
+        forceSaveAllRegexSettings();
+        
+        const settings = loadSettings();
+        const extractStr = settings.extractRegex || '';
+        const filterStr = settings.filterRegex || '';
+        const keepTags = settings.keepTags || false;
+
+        if (!extractStr) {
+            return { enabled: false, keepTags };
         }
 
-        if (!startName || !endName) {
+        try {
             return {
                 enabled: true,
-                invalid: true,
+                invalid: false,
                 keepTags,
-                startTag: '',
-                endTag: '',
-                message: RANGE_INCOMPLETE_TEXT,
+                extractRegex: new RegExp(extractStr, 'g'),
+                filterRegex: filterStr ? new RegExp(filterStr, 'g') : null
             };
+        } catch (e) {
+            return { enabled: true, invalid: true, message: '正则表达式语法错误: ' + e.message };
+        }
+    }
+
+    // 4. 截取文本核心逻辑
+    function extractTextByRange(sourceText) {
+        const fullText = typeof sourceText === 'string' ? sourceText : String(sourceText ?? '');
+        const rangeConfig = getRangeConfig(); // 这里面已经调用了 forceSaveAllRegexSettings
+        const settings = loadSettings();
+        const rulesStr = settings.replaceRules || '';
+
+        // 如果用户没填提取正则，仅仅做清洗和过滤，然后返回整段
+        if (!rangeConfig.enabled) {
+            let processed = fullText;
+            if (settings.filterRegex) {
+                try { processed = processed.replace(new RegExp(settings.filterRegex, 'g'), ''); } catch(e) {}
+            }
+            if (rulesStr) {
+                processed = applyRegexReplacements(processed, rulesStr);
+            }
+            return { ok: true, text: processed, usedRange: false };
+        }
+
+        if (rangeConfig.invalid) {
+            return { ok: false, reason: 'regex_error', message: rangeConfig.message };
+        }
+
+        const regex = rangeConfig.extractRegex;
+        regex.lastIndex = 0;
+        const match = regex.exec(fullText);
+        
+        if (!match) {
+            return { ok: false, reason: 'range_not_found', message: RANGE_NOT_FOUND_TEXT };
+        }
+
+        let extractedText = (!rangeConfig.keepTags && match[1] !== undefined) ? match[1] : match[0];
+
+        // 处理过滤过滤正则
+        if (rangeConfig.filterRegex) {
+            extractedText = extractedText.replace(rangeConfig.filterRegex, '');
+        }
+
+        // 处理清洗字典
+        if (rulesStr) {
+            extractedText = applyRegexReplacements(extractedText, rulesStr);
         }
 
         return {
-            enabled: true,
-            invalid: false,
-            keepTags,
-            startTag: `<${startName}>`,
-            endTag: `</${endName}>`,
-            startName,
-            endName,
+            ok: true,
+            text: extractedText,
+            usedRange: true,
+            keepTags: rangeConfig.keepTags
         };
     }
+
+
+
 
     // 切换到 范围设置 标签页
     function switchTabToRange() {
@@ -2855,60 +3049,6 @@
         return '';
     }
 
-    function extractTextByRange(sourceText) {
-        const fullText = typeof sourceText === 'string' ? sourceText : String(sourceText ?? '');
-        const rangeConfig = getRangeConfig();
-
-        if (!rangeConfig.enabled) {
-            return {
-                ok: true,
-                text: fullText,
-                usedRange: false,
-            };
-        }
-
-        if (rangeConfig.invalid) {
-            return {
-                ok: false,
-                reason: 'range_incomplete',
-                message: rangeConfig.message,
-            };
-        }
-
-        const startIndex = fullText.indexOf(rangeConfig.startTag);
-        if (startIndex === -1) {
-            return {
-                ok: false,
-                reason: 'range_not_found',
-                message: RANGE_NOT_FOUND_TEXT,
-            };
-        }
-
-        const contentStartIndex = startIndex + rangeConfig.startTag.length;
-        const endIndex = fullText.indexOf(rangeConfig.endTag, contentStartIndex);
-
-        if (endIndex === -1) {
-            return {
-                ok: false,
-                reason: 'range_not_found',
-                message: RANGE_NOT_FOUND_TEXT,
-            };
-        }
-
-        const text = rangeConfig.keepTags
-            ? fullText.slice(startIndex, endIndex + rangeConfig.endTag.length)
-            : fullText.slice(contentStartIndex, endIndex);
-
-        return {
-            ok: true,
-            text,
-            usedRange: true,
-            keepTags: rangeConfig.keepTags,
-            startTag: rangeConfig.startTag,
-            endTag: rangeConfig.endTag,
-        };
-    }
-
     async function handleManualTrigger(allowWhenAutoBusy = false) {
         if (isAutoFlowActive() && !allowWhenAutoBusy) {
             showMessage('warning', '当前正在进行自动触发');
@@ -2951,16 +3091,6 @@
         }
 
         return currentPreset.templates.find(item => item.id === templateId) || null;
-    }
-
-    function getSelectedTemplateList(settings = loadSettings()) {
-        const currentPreset = getCurrentTemplatePreset(settings);
-        if (!currentPreset) {
-            return [];
-        }
-
-        const selectedTemplateIdSet = new Set(currentPreset.selectedTemplateIds);
-        return currentPreset.templates.filter(item => selectedTemplateIdSet.has(item.id));
     }
 
     function hasTemplateLabel(label, templates, excludedTemplateId = '') {
@@ -3177,6 +3307,32 @@
         setTemplatePresetDrawerOpen(templatePresetDrawerOpen);
     }
 
+    // 新增：自动触发预设下拉框的渲染
+    function syncAutoTriggerPresetSelectUi() {
+        const $select = $(SELECTORS.autoTriggerPresetSelect);
+        if (!$select.length) {
+            return;
+        }
+
+        const settings = loadSettings();
+        const presets = getTemplatePresets(settings);
+        const currentVal = settings.autoTriggerPresetId || '';
+
+        // 拼接 HTML
+        let html = '<option value="">跟随当前选择</option>';
+        presets.forEach(preset => {
+            const isSelected = preset.id === currentVal ? 'selected' : '';
+            html += `<option value="${escapeHtml(preset.id)}" ${isSelected}>${escapeHtml(preset.name)}</option>`;
+        });
+
+        // 避免重复设值引起光标抖动或不必要的重绘
+        if ($select.html() !== html) {
+            $select.html(html);
+        }
+        $select.val(currentVal);
+    }
+
+
     async function showTemplateActionDialog(options) {
         const title = String(options?.title ?? '提示');
         const message = String(options?.message ?? '');
@@ -3335,6 +3491,7 @@
         closeTemplatePresetDrawer();
         renderTemplateList();
         syncOutputFromSelectedTemplates();
+        syncApiConfigUi();
         showMessage('success', `已切换到预设“${settings.templatePresets[nextPresetIndex].name}”。`);
     }
 
@@ -3818,16 +3975,30 @@
         return `${normalizedTemplateText}\n\n${normalizedCurrentText}`;
     }
 
-    function buildOutputFromSelectedTemplates(baseText, settings = loadSettings()) {
-        const selectedTemplates = getSelectedTemplateList(settings);
+    // 修改函数，支持指定 preset
+    function getSelectedTemplateList(settings = loadSettings(), targetPresetId = null) {
+        const presetId = targetPresetId || settings.currentTemplatePresetId;
+        const presetIndex = findPresetIndexById(presetId, settings);
+        const currentPreset = presetIndex >= 0 ? settings.templatePresets[presetIndex] : settings.templatePresets[0];
+
+        if (!currentPreset) return [];
+
+        const selectedTemplateIdSet = new Set(currentPreset.selectedTemplateIds);
+        return currentPreset.templates.filter(item => selectedTemplateIdSet.has(item.id));
+    }
+
+    // 生成输出时，如果存在 targetPresetId，则依此渲染
+    function buildOutputFromSelectedTemplates(baseText, settings = loadSettings(), targetPresetId = null) {
+        const selectedTemplates = getSelectedTemplateList(settings, targetPresetId);
         let nextText = String(baseText ?? '');
 
         for (let i = selectedTemplates.length - 1; i >= 0; i--) {
             nextText = applyTemplateText(selectedTemplates[i].content, nextText);
         }
-
         return nextText;
     }
+    
+    
 
     function syncOutputFromSelectedTemplates(shouldFocus = false) {
         const settings = loadSettings();
@@ -4124,6 +4295,7 @@
         const templates = Array.isArray(currentPreset?.templates) ? currentPreset.templates : [];
         const selectedTemplateIdSet = new Set(currentPreset?.selectedTemplateIds || []);
         syncTemplatePresetUi();
+        syncAutoTriggerPresetSelectUi();
 
         if (templates.length === 0) {
             $list.html(`
@@ -4246,61 +4418,49 @@
                     <div class="my-topbar-test-col-middle">
                         <div class="my-topbar-test-section-title">设置详情</div>
 
+                        <!-- 1. 修改正则范围设置 -->
                         <div id="my-topbar-test-range-settings" class="my-topbar-test-settings-section">
                             <label for="my-topbar-test-keep-tags" class="my-topbar-test-keep-tags-row">
-                                <input id="my-topbar-test-keep-tags"
-                                       class="my-topbar-test-keep-tags-checkbox"
-                                       type="checkbox">
-                                <span class="my-topbar-test-keep-tags-text">保留标签</span>
+                                <input id="my-topbar-test-keep-tags" class="my-topbar-test-keep-tags-checkbox" type="checkbox">
+                                <span class="my-topbar-test-keep-tags-text">在输出中保留原格式(使用 $& 引用)</span>
                             </label>
-
-                            <label for="my-topbar-test-only-replace-in-tags" class="my-topbar-test-keep-tags-row my-topbar-test-only-replace-row">
-                                <input id="my-topbar-test-only-replace-in-tags"
-                                       class="my-topbar-test-keep-tags-checkbox"
-                                       type="checkbox"
-                                       disabled>
-                                <span class="my-topbar-test-keep-tags-text">仅替换标签内</span>
-                            </label>
-
-                            <div class="my-topbar-test-range-only-replace-tip">
-                                勾选仅替换标签内,只会替换聊天记录相同的标签内的内容<br>
-                                找不到标签,无法替换的内容会输出到截取框末尾.
-                            </div>
 
                             <div class="my-topbar-test-range-row">
-                                <label for="my-topbar-test-start-tag" class="my-topbar-test-label">开始标签</label>
+                                <label for="my-topbar-test-extract-regex" class="my-topbar-test-label">提取正则</label>
                                 <div class="my-topbar-test-tag-input-wrap">
-                                    <span class="my-topbar-test-tag-prefix">&lt;</span>
-                                    <input id="my-topbar-test-start-tag"
-                                           class="my-topbar-test-tag-input"
-                                           type="text"
-                                           placeholder="例如：text"
-                                           spellcheck="false"
-                                           autocomplete="off">
-                                    <span class="my-topbar-test-tag-suffix">&gt;</span>
+                                    <input id="my-topbar-test-extract-regex" class="my-topbar-test-tag-input" style="width:100%" type="text" placeholder="例如：<thought>([\s\S]*?)<\/thought>" autocomplete="off">
                                 </div>
                             </div>
 
-                            <div class="my-topbar-test-range-row">
-                                <label for="my-topbar-test-end-tag" class="my-topbar-test-label">结束标签</label>
-                                <div class="my-topbar-test-tag-input-wrap">
-                                    <span class="my-topbar-test-tag-prefix">&lt;/</span>
-                                    <input id="my-topbar-test-end-tag"
-                                           class="my-topbar-test-tag-input"
-                                           type="text"
-                                           placeholder="例如：text"
-                                           spellcheck="false"
-                                           autocomplete="off">
-                                    <span class="my-topbar-test-tag-suffix">&gt;</span>
+                            <!-- ===== 新增：多重正则替换（清洗内容）面板 ===== -->
+                            <div class="my-topbar-test-range-row" style="flex-direction: column; align-items: flex-start; margin-top: 10px;">
+                                <label for="my-topbar-test-replace-rules" class="my-topbar-test-label" style="margin-bottom: 8px;">多重正则清洗字典 (提取后处理)</label>
+                                <textarea id="my-topbar-test-replace-rules" 
+                                          class="text_pole" 
+                                          style="width: 100%; height: 100px; resize: vertical; box-sizing: border-box;" 
+                                          spellcheck="false" 
+                                          placeholder="每行一条，格式：需要匹配的正则===替换后的内容&#10;例如 (中符转英符)：&#10;/，/g===,&#10;/。/g===.&#10;[特殊词]===xxx"></textarea>
+                                <div class="my-topbar-test-range-tip" style="margin-top: 4px;">
+                                    支持纯文本或带定界符 (如 /正则/g) 的正则表达式。按从上到下的顺序依次替换提取后的内容。可以用 \n 代表换行符。
                                 </div>
                             </div>
+                            <!-- ============================================== -->
 
+
+                            <div class="my-topbar-test-range-row">
+                                <label for="my-topbar-test-filter-regex" class="my-topbar-test-label">过滤正则 (可选清洗)</label>
+                                <div class="my-topbar-test-tag-input-wrap">
+                                    <input id="my-topbar-test-filter-regex" class="my-topbar-test-tag-input" style="width:100%" type="text" placeholder="比如填写需要剔除的干扰符正则表达式" autocomplete="off">
+                                </div>
+                            </div>
+                            
                             <div class="my-topbar-test-range-tip">
-                                留空时默认截取整条最后消息。<br>
-                                例如开始标签填 text，结束标签也填 text，就会截取 &lt;text&gt; 和 &lt;/text&gt; 之间的内容。<br>
-                                打开“保留标签”后，输出会连同开始和结束标签一起保留。
+                                使用 JavaScript 标准正则表达式。<br>留空时默认截取整条最后消息。
                             </div>
                         </div>
+
+
+
 
                         <div id="my-topbar-test-template-settings" class="my-topbar-test-settings-section" style="display: none;">
                             <div id="my-topbar-test-template-browse-view" class="my-topbar-test-template-browse-view">
@@ -4418,18 +4578,18 @@
                                    hidden>
                         </div>
 
+                        <!-- 2. 修改截取与发送设置 (增加绑定预设选项) -->
                         <div id="my-topbar-test-capture-send-settings" class="my-topbar-test-settings-section" style="display: none;">
-                            <div class="my-topbar-test-template-tip">
-                                先手动截取，再把当前截取框中的内容复制发送给 AI。发送完成后会弹出确认框，确认后替换当前聊天窗口最后一条消息。
-                            </div>
-
                             <div class="my-topbar-test-capture-send-options">
                                 <label for="my-topbar-test-auto-trigger-enabled" class="my-topbar-test-keep-tags-row">
-                                    <input id="my-topbar-test-auto-trigger-enabled"
-                                           class="my-topbar-test-keep-tags-checkbox"
-                                           type="checkbox">
+                                    <input id="my-topbar-test-auto-trigger-enabled" class="my-topbar-test-keep-tags-checkbox" type="checkbox">
                                     <span class="my-topbar-test-keep-tags-text">开启自动触发</span>
                                 </label>
+                                <!-- 下拉框选取绑定的预设 -->
+                                <select id="my-topbar-test-auto-trigger-preset" style="margin-left: 10px;" class="text_pole">
+                                     <option value="">跟随当前选择</option>
+                                </select>
+                                <!-- ......保留其它选项 -->
 
                                 <label for="my-topbar-test-skip-reply-confirm" class="my-topbar-test-keep-tags-row">
                                     <input id="my-topbar-test-skip-reply-confirm"
@@ -4450,6 +4610,12 @@
                                         type="button">
                                     <i class="fa-solid fa-paper-plane"></i> 手动发送
                                 </button>
+                                <button id="my-topbar-test-direct-replace"
+                                        class="menu_button my-topbar-test-menu-btn"
+                                        title="不经 AI 发送，把当前输出框的内容直接塞回聊天记录里"
+                                        type="button">
+                                    <i class="fa-solid fa-right-left"></i> 直接替换
+                                </button>
                                 <button id="my-topbar-test-stop-manual-flow"
                                         class="menu_button my-topbar-test-menu-btn"
                                         type="button">
@@ -4459,6 +4625,26 @@
                         </div>
 
                         <div id="my-topbar-test-api-settings" class="my-topbar-test-settings-section" style="display: none;">
+                            <div class="my-topbar-test-section-title" style="margin-top: 20px; font-size: 14px; color: var(--SmartThemeBodyColor);">模型上下文注入 (Context)</div>
+                        <div class="my-topbar-test-api-grid">
+                            <div class="my-topbar-test-api-field" style="grid-column: 1 / -1;">
+                                <label for="my-topbar-test-api-system-prompt" class="my-topbar-test-label">系统提示词 (System Prompt)</label>
+                                <textarea id="my-topbar-test-api-system-prompt" class="text_pole my-topbar-test-textarea" style="height: 60px;" spellcheck="false" placeholder="You are a helpful assistant."></textarea>
+                            </div>
+                            <div class="my-topbar-test-api-field">
+                                <label for="my-topbar-test-api-max-history" class="my-topbar-test-label">发送历史条数</label>
+                                <input id="my-topbar-test-api-max-history" class="text_pole my-topbar-test-api-input" type="number" step="1" min="0" placeholder="5">
+                            </div>
+                            <div class="my-topbar-test-api-field">
+                                <label for="my-topbar-test-api-history-skip" class="my-topbar-test-label">跳过最新记录条数</label>
+                                <input id="my-topbar-test-api-history-skip" class="text_pole my-topbar-test-api-input" type="number" step="1" min="0" placeholder="1" title="例如设为 1，则不会把最后一条消息（通常是刚被提取的原始消息）发给AI，避免内容重复">
+                            </div>
+                            <div class="my-topbar-test-api-field" style="grid-column: 1 / -1;">
+                                <label for="my-topbar-test-api-history-replace-rules" class="my-topbar-test-label">历史记录正则清洗 (不影响本地)</label>
+                                <textarea id="my-topbar-test-api-history-replace-rules" class="text_pole my-topbar-test-textarea" style="height: 80px;" spellcheck="false" placeholder="格式：正则===替换内容&#10;例如移除旁白：&#10;/\*.*?\*/g==="></textarea>
+                            </div>
+                        </div>
+                        <hr style="border-color: var(--SmartThemeBorderColor); margin: 20px 0;">
                             <div class="my-topbar-test-api-grid">
                                 <div class="my-topbar-test-api-field">
                                     <label for="my-topbar-test-api-temperature" class="my-topbar-test-label">模型温度</label>
@@ -4731,6 +4917,24 @@
     }
 
     function bindEvents() {
+
+        // === 修复：将历史记录正则输入框也加入暴力强制存档监听中 ===
+        const regexInputs = '#my-topbar-test-extract-regex, #my-topbar-test-filter-regex, #my-topbar-test-replace-rules, #my-topbar-test-api-history-replace-rules';
+        
+        $(document).off('input change blur', regexInputs)
+                   .on('input change blur', regexInputs, function() {
+            forceSaveAllRegexSettings();
+        });
+
+
+        // 3. 监听多重替换字典输入
+        $(document)
+            .off('input.myTopbarRegexRules', SELECTORS.replaceRulesInput)
+            .on('input.myTopbarRegexRules', SELECTORS.replaceRulesInput, function () {
+                loadSettings().replaceRules = String($(this).val() || '');
+                savePluginSettings();
+            });
+
         // 顶部按钮点击打开面板
         $(document)
             .off('click.myTopbarTest', SELECTORS.button)
@@ -4782,6 +4986,15 @@
                 e.stopPropagation();
                 setMobilePanelView('menu');
             });
+
+        $(document)
+            .off('change.myTopbarTestAutoTriggerPreset', SELECTORS.autoTriggerPresetSelect)
+            .on('change.myTopbarTestAutoTriggerPreset', SELECTORS.autoTriggerPresetSelect, function () {
+                const settings = loadSettings();
+                settings.autoTriggerPresetId = String($(this).val() ?? '');
+                savePluginSettings();
+            });
+
 
         // 切换到 范围设置 标签
         $(document)
@@ -4903,18 +5116,17 @@
                 syncOnlyReplaceInTagsUi();
             });
 
+        // 找到原来的 StartTag 和 EndTag 绑定，改为绑定提取和过滤正则
         $(document)
-            .off('input.myTopbarTestStartTag', SELECTORS.startTagInput)
-            .on('input.myTopbarTestStartTag', SELECTORS.startTagInput, function () {
-                updateTagSettingFromInput(SELECTORS.startTagInput, 'startTag');
-                syncStopStringWithEndTagIfNeeded();
+            .off('input.myTopbarTestExtractRegex', SELECTORS.extractRegexInput)
+            .on('input.myTopbarTestExtractRegex', SELECTORS.extractRegexInput, function () {
+                updateRegexSettingFromInput(SELECTORS.extractRegexInput, 'extractRegex');
             });
 
         $(document)
-            .off('input.myTopbarTestEndTag', SELECTORS.endTagInput)
-            .on('input.myTopbarTestEndTag', SELECTORS.endTagInput, function () {
-                updateTagSettingFromInput(SELECTORS.endTagInput, 'endTag');
-                syncStopStringWithEndTagIfNeeded();
+            .off('input.myTopbarTestFilterRegex', SELECTORS.filterRegexInput)
+            .on('input.myTopbarTestFilterRegex', SELECTORS.filterRegexInput, function () {
+                updateRegexSettingFromInput(SELECTORS.filterRegexInput, 'filterRegex');
             });
 
         $(document)
@@ -4964,6 +5176,37 @@
                     $(this).val(normalized);
                 }
                 updateApiConfigField('stopString', normalized);
+            });
+
+        // === 新增：上下文注入的事件监听 ===
+        $(document)
+            .off('change.myTopbarTestApiIncludeWi', SELECTORS.apiIncludeWorldInfoCheckbox)
+            .on('change.myTopbarTestApiIncludeWi', SELECTORS.apiIncludeWorldInfoCheckbox, function () {
+                updateApiConfigBoolean(SELECTORS.apiIncludeWorldInfoCheckbox, 'includeWorldInfo');
+            });
+
+        $(document)
+            .off('input.myTopbarTestApiMaxHistory', SELECTORS.apiMaxHistoryCountInput)
+            .on('input.myTopbarTestApiMaxHistory', SELECTORS.apiMaxHistoryCountInput, function () {
+                updateApiConfigString(SELECTORS.apiMaxHistoryCountInput, 'maxHistoryCount');
+            });
+
+        $(document)
+            .off('input.myTopbarTestApiHistorySkip', SELECTORS.apiHistorySkipCountInput)
+            .on('input.myTopbarTestApiHistorySkip', SELECTORS.apiHistorySkipCountInput, function () {
+                updateApiConfigString(SELECTORS.apiHistorySkipCountInput, 'historySkipCount');
+            });
+
+        $(document)
+            .off('input.myTopbarTestApiSystemPrompt', SELECTORS.apiSystemPromptInput)
+            .on('input.myTopbarTestApiSystemPrompt', SELECTORS.apiSystemPromptInput, function () {
+                updateApiConfigString(SELECTORS.apiSystemPromptInput, 'systemPrompt');
+            });
+
+        $(document)
+            .off('input.myTopbarTestApiHistoryReplaceRules', SELECTORS.apiHistoryReplaceRulesInput)
+            .on('input.myTopbarTestApiHistoryReplaceRules', SELECTORS.apiHistoryReplaceRulesInput, function () {
+                updateApiConfigString(SELECTORS.apiHistoryReplaceRulesInput, 'historyReplaceRules');
             });
 
         $(document)
@@ -5275,6 +5518,17 @@
                 e.stopPropagation();
                 await handleManualSend();
             });
+
+        // ======= 新增这块事件绑定 =======
+        $(document)
+            .off('click.myTopbarTestDirectReplace', SELECTORS.directReplaceButton)
+            .on('click.myTopbarTestDirectReplace', SELECTORS.directReplaceButton, async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                await handleDirectReplace();
+            });
+        // ==============================
+
 
         $(document)
             .off('click.myTopbarTestStopManualFlow', SELECTORS.stopManualFlowButton)
