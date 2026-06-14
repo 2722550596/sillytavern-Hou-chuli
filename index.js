@@ -1643,7 +1643,9 @@
         const featureConfig = {
             includeWorldInfo: resolvedApiConfig.includeWorldInfo ?? true,
             maxHistoryCount: resolvedApiConfig.maxHistoryCount ?? 5,
-            systemPrompt: resolvedApiConfig.systemPrompt || ""
+            historySkipCount: resolvedApiConfig.historySkipCount ?? 1,
+            historyReplaceRules: resolvedApiConfig.historyReplaceRules ?? '',
+            systemPrompt: resolvedApiConfig.systemPrompt || "",
         };
 
         // 执行 Path B：打包消息
